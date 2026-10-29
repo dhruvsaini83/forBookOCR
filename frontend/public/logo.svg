@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none">
+  <rect width="100" height="100" rx="20" fill="#EF8A25"/>
+  <circle cx="50" cy="50" r="38" stroke="#FFE6CB" stroke-width="2.5" stroke-dasharray="4 4"/>
+  <!-- Devanagari Om / Shirorekha / 'अ' stylization -->
+  <path d="M28 32 H72" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round"/>
+  <path d="M48 32 V70" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round"/>
+  <path d="M48 50 C48 42 35 40 33 48 C31 54 40 56 46 56" stroke="#FFFFFF" stroke-width="4.5" stroke-linecap="round"/>
+  <path d="M33 48 C33 60 48 64 56 64" stroke="#FFFFFF" stroke-width="4.5" stroke-linecap="round"/>
+  <!-- Quill / Preserved Scan Lens -->
+  <circle cx="68" cy="65" r="14" fill="#783816" stroke="#FFFFFF" stroke-width="2.5"/>
+  <path d="M63 65 L67 69 L74 61" stroke="#FDE68A" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

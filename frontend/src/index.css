@@ -1,0 +1,51 @@
+@import url('https://fonts.googleapis.com/css2?family=Martel:wght@400;600;700;900&family=Noto+Sans+Devanagari:wght@300;400;500;600;700;800&family=Noto+Serif+Devanagari:wght@400;600;700&family=Rozha+One&family=Inter:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: 'Inter', 'Noto Sans Devanagari', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color-scheme: light dark;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background-color: #faf8f5;
+  color: #1e293b;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1ede4;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #d4c8b5;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #b8a68e;
+}
+
+/* Shirorekha & Devanagari typography enhancements */
+.devanagari-text {
+  font-feature-settings: "blwf" 1, "cjct" 1, "haln" 1, "pres" 1, "abvs" 1, "blws" 1, "psts" 1;
+  text-rendering: optimizeLegibility;
+  line-height: 1.85;
+}
+
+/* Canvas & Image Workspace Controls */
+.image-canvas-container {
+  touch-action: none;
+  user-select: none;
+}
