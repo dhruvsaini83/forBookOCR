@@ -13,3 +13,4 @@ services:
         value: retain_all
       - key: PYTHONIOENCODING
         value: utf-8
+

@@ -103,3 +103,4 @@ docker run -d -p 8000:8000 --restart always --name vaniscript-app vaniscript
 - [requirements.txt](file:///d:/project/forBook%20new/requirements.txt): क्लाउड कंटेनर हेतु पायथन निर्भरताएँ।
 - [render.yaml](file:///d:/project/forBook%20new/render.yaml): Render पर 1-क्लिक ऑटो डिप्लॉय ब्लूप्रिंट।
 - [frontend/vercel.json](file:///d:/project/forBook%20new/frontend/vercel.json): Vercel SPA रूटिंग रीराइट्स।
+
