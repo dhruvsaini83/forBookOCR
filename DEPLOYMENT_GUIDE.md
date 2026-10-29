@@ -1,109 +1,104 @@
-# वाणीसंशोधक (VaniScript) — पूर्ण डिप्लॉयमेंट मार्गदर्शिका (Deployment Guide)
+# वाणीसंशोधक (VaniScript) — Render.com एवं Vercel डिप्लॉयमेंट मार्गदर्शिका
 
-इस मार्गदर्शिका में वाणीसंशोधक (Hindi Heritage OCR & Digital Granth Preservation Platform) को **Hugging Face Spaces (Docker)** एवं **Vercel** पर लाइव डिप्लॉय करने की विस्तृत चरणबद्ध प्रक्रिया समझाई गई है।
+इस मार्गदर्शिका में वाणीसंशोधक (Hindi Heritage OCR & Digital Granth Preservation Platform) को **Render.com (Docker Backend)** एवं **Vercel (React Frontend)** पर 100% मुफ़्त में लाइव डिप्लॉय करने की विस्तृत चरणबद्ध प्रक्रिया समझाई गई है।
 
 ---
 
 ## 📌 डिप्लॉयमेंट आर्किटेक्चर (Deployment Architecture)
 
-### क्या यह पूरा प्रोजेक्ट केवल Vercel पर चल सकता है?
-- **फ्रंटएंड (React 19):** ✅ **हाँ**, Vercel पर बहुत आसानी से और मुफ्त में चल सकता है।
-- **बैकएंड (Python FastAPI + Tesseract + EasyOCR + PyTorch):** ❌ **केवल Vercel पर नहीं चल सकता।**
-  - **कारण:** 
-    1. Vercel एक **Serverless Jamstack** प्लेटफ़ॉर्म है जहाँ फ़ंक्शन का आकार अधिकतम 250 MB और निष्पादन समय 10–60 सेकंड तक सीमित होता है।
-    2. इस प्रोजेक्ट में **Tesseract C++ बाइनरी**, **PyTorch**, **EasyOCR डीप लर्निंग मॉडल (300 MB)**, तथा **OpenCV** शामिल हैं, जिनका कुल आकार 1.5 GB से अधिक है।
-    3. Vercel में कोई स्थायी डिस्क (Persistent Disk) नहीं होती।
+प्रोजेक्ट दो समर्थित आर्किटेक्चर प्रदान करता है:
+
+### 1. हाइब्रिड आर्किटेक्चर (Hybrid Architecture — अनुशंसित 🌟)
+- **फ्रंटएंड:** [Vercel](https://vaniscript.vercel.app/) पर लाइव (अल्ट्रा-फास्ट ग्लोबल CDN, मुफ़्त SSL).
+- **बैकएंड:** [Render.com](https://render.com/) पर Docker Web Service (FastAPI + Tesseract OCR + EasyOCR + PyTorch CPU).
+- **कनेक्शन:** Vercel में `VITE_API_URL=https://<your-render-app>.onrender.com` सेट करने पर फ्रंटएंड सीधे रेंडर बैकएंड से बात करता है।
+
+### 2. ऑल-इन-वन डॉकर आर्किटेक्चर (All-in-One Docker Architecture)
+- रिपॉजिटरी में स्थित मल्टी-स्टेज `Dockerfile` पहले React 19 फ्रंटएंड को कंपाइल करता है और फिर Python 3.11 बैकएंड के अंदर एम्बेड कर देता है।
+- Render.com पर केवल एक ही सर्विस डिप्लॉय करके आपको एक सिंगल URL मिलता है जहाँ UI और API दोनों साथ चलते हैं।
 
 ---
 
-## 🚀 विकल्प १: Hugging Face Spaces (Docker) पर डिप्लॉय (अनुशंसित / Free 16GB RAM)
+## 🚀 चरणबद्ध डिप्लॉयमेंट प्रक्रिया: Render.com पर बैकएंड लाइव करें
 
-Hugging Face Spaces मुफ़्त CPU टियर पर **16 GB RAM** और **2 vCPU** प्रदान करता है, जो PyTorch और EasyOCR के लिए अत्यंत उपयुक्त है।
+### चरण १: Render.com पर लॉगिन करें
+1. [render.com](https://render.com/) पर जाएँ।
+2. **"Sign in with GitHub"** पर क्लिक करें और अपने GitHub अकाउंट (`dhruvsaini83`) से ऑथराइज करें।
 
-### चरण १: Hugging Face पर Space बनाएँ
-1. [Hugging Face](https://huggingface.co/) पर अकाउंट बनाएँ या लॉग इन करें।
-2. टॉप-राइट प्रोफ़ाइल आइकन पर क्लिक करें और **New Space** चुनें (या [huggingface.co/new-space](https://huggingface.co/new-space) पर जाएँ)।
-3. सेटिंग्स भरें:
-   - **Space name:** `vaniscript-hindi-ocr`
-   - **License:** `apache-2.0`
-   - **Select the Space SDK:** **Docker** 🐳 (Blank)
-   - **Space hardware:** **Free CPU basic • 2 vCPU • 16GB RAM** (मुफ़्त)
-   - **Visibility:** `Public`
-4. **Create Space** बटन दबाएँ।
+### चरण २: नई Web Service बनाएँ
+1. Render Dashboard पर ऊपर दाएँ कोने में **"New +"** बटन दबाएँ और **"Web Service"** चुनें।
+2. **"Build and deploy from a Git repository"** चुनें और Next दबाएँ।
+3. GitHub रिपॉजिटरी लिस्ट में से **`forBookOCR`** (`dhruvsaini83/forBookOCR`) चुनें और **"Connect"** पर क्लिक करें।
 
----
+### चरण ३: सर्विस सेटिंग्स कॉन्फ़िगर करें
+फॉर्म में निम्नलिखित विवरण भरें:
+- **Name:** `vaniscript-hindi-ocr` (या अपनी पसंद का नाम)
+- **Region:** `Singapore` (एशिया के लिए सबसे तेज़) या `Oregon`
+- **Branch:** `master`
+- **Runtime:** `Docker` (Render अपने आप Dockerfile पहचान लेगा)
+- **Instance Type:** **Free ($0/month)**
+- **Health Check Path:** `/api/health`
 
-### चरण २: GitHub से Hugging Face Space को जोड़ें
+### चरण ४: पर्यावरण चर (Environment Variables) जोड़ें
+**Advanced** सेक्शन खोलें और **Add Environment Variable** पर क्लिक करें:
+| Key | Value | विवरण |
+| :--- | :--- | :--- |
+| `PORT` | `8000` | एप्लिकेशन पोर्ट (Dockerfile स्वतः `$PORT` पहचानता है) |
+| `PYTHONIOENCODING` | `utf-8` | देवनागरी यूनीकोड लॉगिंग के लिए आवश्यक |
+| `ARCHIVAL_STORAGE_POLICY` | `retain_all` | दुर्लभ पांडुलिपियों की पूर्ण सुरक्षा नीति |
+| `EASYOCR_MODULE_PATH` | `/app/models/easyocr` | प्री-कैश्ड EasyOCR देवनागरी मॉडल डायरेक्टरी |
 
-Hugging Face Space पर कोड पहुँचाने के २ आसान तरीके हैं:
-
-#### तरीक़ा A: GitHub Actions द्वारा ऑटो-सिंक (श्रेष्ठ तरीक़ा)
-Hugging Face Space सेटिंग्स में जाकर अपना Access Token (`write` अनुमति वाला) निकालें और GitHub रिपॉजिटरी की Secrets में जोड़ दें। इसके बाद हर GitHub पुश स्वतः Hugging Face पर डिप्लॉय हो जाएगा।
-
-#### तरीक़ा B: लोकल टर्मिनल से सीधे Hugging Face पर Git Push करना
-अपने कंप्यूटर के टर्मिनल (PowerShell) में यह कमांड चलाएँ:
-
-```powershell
-# 1. Hugging Face रिपॉजिटरी को रिमोट के रूप में जोड़ें
-git remote add hf https://huggingface.co/spaces/<YOUR_HF_USERNAME>/vaniscript-hindi-ocr
-
-# 2. कोड को Hugging Face पर पुश करें
-git push -u hf master:main
-```
-*(जब पासवर्ड माँगे, तो अपना Hugging Face User Access Token (Write) डालें)*
-
----
-
-### चरण ३: डॉकर बिल्ड एवं रन प्रक्रिया
-पुश करते ही Hugging Face Space स्वतः बिल्ड शुरू कर देगा:
-1. React 19 फ्रंटएंड का प्रोडक्शन बंडल बनाएगा।
-2. लिनक्स Tesseract (हिन्दी, संस्कृत, अंग्रेज़ी) और देवनागरी फ़ॉन्ट्स इंस्टॉल करेगा।
-3. PyTorch CPU और EasyOCR 300 MB मॉडल्स को `/app/models/easyocr` में डाउनलोड करके कैश करेगा।
-4. पोर्ट **`7860`** पर FastAPI सर्वर चालू करेगा।
-5. 3 से 5 मिनट में आपका Space **Running** स्थिति में आ जाएगा और आपको पब्लिक लिंक मिलेगा:  
-   👉 `https://<YOUR_HF_USERNAME>-vaniscript-hindi-ocr.hf.space`
+### चरण ५: डिप्लॉय करें
+- सबसे नीचे **"Deploy Web Service"** बटन पर क्लिक करें।
+- Render का बिल्ड इंजन Dockerfile की मदद से:
+  1. React फ्रंटएंड बिल्ड करेगा।
+  2. लिनक्स Tesseract (Hindi, Sanskrit, English) इंस्टॉल करेगा।
+  3. PyTorch CPU और EasyOCR मॉडल्स को बिल्ड-टाइम पर कैश करेगा।
+  4. कंटेनर चालू करके हेल्थ चेक पास करेगा।
+- 3 से 5 मिनट में आपकी सर्विस **Live** हो जाएगी और आपको पब्लिक URL मिलेगा:  
+  👉 `https://vaniscript-hindi-ocr.onrender.com`
 
 ---
 
-## 🌐 विकल्प २: Vercel फ्रंटएंड को Hugging Face बैकएंड से जोड़ना (Hybrid Architecture)
+## 🌐 Vercel फ्रंटएंड को Render बैकएंड से जोड़ना
 
 यदि आप अपने पहले से डिप्लॉय किए हुए Vercel फ्रंटएंड ([https://vaniscript.vercel.app](https://vaniscript.vercel.app)) का उपयोग करना चाहते हैं:
 
-1. Hugging Face Space का पब्लिक डायरेक्ट लिंक कॉपी करें:  
-   `https://<YOUR_HF_USERNAME>-vaniscript-hindi-ocr.hf.space`
-2. [Vercel Dashboard](https://vercel.com/) पर जाएँ और अपने प्रोजेक्ट (`vaniscript`) को खोलें।
+1. Render डैशबोर्ड से अपना लाइव बैकएंड URL कॉपी करें (उदा. `https://vaniscript-hindi-ocr.onrender.com`).
+2. [Vercel Dashboard](https://vercel.com/) पर जाएँ और अपने प्रोजेक्ट `vaniscript` को खोलें।
 3. **Settings** -> **Environment Variables** में जाएँ।
-4. नया वेरिएबल जोड़ें:
+4. नया वेरिएबल जोड़ें / अपडेट करें:
    - **Key:** `VITE_API_URL`
-   - **Value:** `https://<YOUR_HF_USERNAME>-vaniscript-hindi-ocr.hf.space`
-5. **Deployments** टैब में जाकर नवीनतम डिप्लॉयमेंट पर **Redeploy** दबाएँ।
+   - **Value:** `https://vaniscript-hindi-ocr.onrender.com` (बिना ट्रेलिंग स्लैश के)
+5. **Deployments** टैब में जाकर नवीनतम डिप्लॉयमेंट के सामने तीन बिंदुओं (`...`) पर क्लिक करके **Redeploy** दबाएँ।
 
-अब आपका Vercel फ्रंटएंड सीधे Hugging Face Space के हाई-परफॉर्मेंस बैकएंड से बात करेगा!
+अब आपका Vercel फ्रंटएंड सीधे आपके Render बैकएंड से जुड़कर काम करेगा!
 
 ---
 
-## 💾 डेटाबेस एवं स्टोरेज सुरक्षा नीति (Storage & Persistence Notice)
+## 💾 डेटाबेस एवं स्टोरेज सुरक्षा नीति (Render Free Tier Ephemeral Notice)
 
-> ⚠️ **महत्वपूर्ण चेतावनी:** Hugging Face Spaces का मुफ़्त लोकल फ़ाइलसिस्टम **अस्थायी (Ephemeral)** होता है।
-> यदि Space पुनः चालू (Restart), स्लीप, या री-बिल्ड होता है, तो `backend/storage/uploads` और `preservation.db` कंटेनर की मूल स्थिति में रीसेट हो जाते हैं।
+> ⚠️ **महत्वपूर्ण सूचना:** Render.com के मुफ़्त टियर पर कंटेनर का लोकल डिस्क **अस्थायी (Ephemeral)** होता है।
+> यदि ऐप इनएक्टिविटी के बाद रीस्टार्ट होता है या नया कोड पुश होता है, तो `backend/storage/uploads` और लोकल SQLite फ़ाइलें इनिशियल स्टेट में रीसेट हो जाती हैं।
 
 ### ग्रन्थों को स्थायी रूप से सुरक्षित रखने की कार्यप्रणाली:
-1. **एक्सपोर्ट (Export) सुविधा का उपयोग:** जब भी आप किसी धार्मिक ग्रन्थ या भजन का डिजिटलीकरण पूर्ण करें, **"निर्यात एवं डाउनलोड"** विंडो से Word (.docx), JSON, या TXT फ़ाइल तुरंत अपने कंप्यूटर पर डाउनलोड कर लें।
-2. **Hugging Face Persistent Storage (भविष्य के लिए):**
-   - यदि आप चाहते हैं कि फ़ाइलें कभी डिलीट न हों, तो Space की Settings में जाकर "Persistent Storage" (Tiered Storage) सक्रिय किया जा सकता है जो `/data` डायरेक्टरी प्रदान करता है।
-   - हमारे कोड में `STORAGE_DIR` एनवायरनमेंट वेरिएबल को पहले से ही सपोर्ट कर दिया गया है। Settings में `STORAGE_DIR=/data` सेट करते ही डेटाबेस और इमेजेस हमेशा के लिए सुरक्षित रहेंगी।
+1. **एक्सपोर्ट (Export) सुविधा का उपयोग:** जब भी आप किसी दुर्लभ ग्रन्थ, पृष्ठ, या भजन का ओसीआर और प्रूफरीडिंग पूर्ण करें, ऊपर स्थित **"निर्यात एवं डाउनलोड"** विंडो से Word (.docx), JSON, या TXT फ़ाइल तुरंत अपने कंप्यूटर पर डाउनलोड कर लें।
+2. **स्थायी स्टोरेज (वैकल्पिक / भविष्य के लिए):**
+   - Render पर $1/महीने में 1GB Persistent Disk जोड़ी जा सकती है।
+   - हमारे कोड में `STORAGE_DIR` एनवायरनमेंट वेरिएबल का पूर्ण समर्थन है। अगर आप `/var/data` जैसी माउंटेड डिस्क जोड़ते हैं, तो सिर्फ `STORAGE_DIR=/var/data` सेट करने पर सारा डेटा हमेशा सुरक्षित रहेगा।
 
 ---
 
-## 🩺 परीक्षण एवं समस्या निवारण (Troubleshooting & Checklist)
+## 🩺 समस्या निवारण एवं चेकलिस्ट (Troubleshooting Checklist)
 
 | समस्या | संभावित कारण | समाधान |
 | :--- | :--- | :--- |
-| **Port 7860 error** | ऐप डिफ़ॉल्ट 8000 पर सुन रहा है | `Dockerfile` में `PORT=7860` और `EXPOSE 7860` सुनिश्चित है। |
-| **Permission denied (Errno 13)** | गैर-रूट यूज़र `1000` स्टोरेज में नहीं लिख पा रहा | `Dockerfile` में `chmod -R 777 /app/backend/storage` जोड़ा गया है। |
-| **Slow startup (Re-downloading weights)** | EasyOCR मॉडल्स कैश नहीं मिले | `ENV EASYOCR_MODULE_PATH=/app/models/easyocr` द्वारा बिल्ड टाइम पर प्री-डाउनलोड सुनिश्चित है। |
-| **Health check failure** | `/api/health` का उत्तर न मिलना | `backend/main.py` में `/health` और `/api/health` दोनों एंडपॉइंट्स JSON लौटाते हैं। |
-| **Tesseract missing hin data** | Tesseract पाथ त्रुटि | `config.py` लिनक्स पर `/usr/share/tesseract-ocr/5/tessdata` स्वतः डिटेक्ट करता है। |
+| **Render Port Binding Error** | पोर्ट मिसमैच | `Dockerfile` में `CMD ["sh", "-c", "uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000}"]` सेट है, जिससे Render द्वारा दिया गया कोई भी पोर्ट स्वतः कनेक्ट हो जाता है। |
+| **Health Check Timed Out** | `/api/health` का उत्तर न मिलना | `render.yaml` और `backend/main.py` में `/api/health` और `/health` दोनों एंडपॉइंट्स JSON लौटाते हैं। |
+| **Cold Boot Delay (~50s)** | Render Free टियर 15 मिनट बाद स्लीप हो जाता है | पहली रिक्वेस्ट पर कंटेनर को जगने में 30–50 सेकंड लगते हैं। यह मुफ़्त टियर का सामान्य व्यवहार है। |
+| **Memory Limit (512MB RAM)** | बड़े PDF या EasyOCR पर OOM खतरा | Tesseract डिफ़ॉल्ट इंजन है और मात्र ~150 MB RAM में काम करता है। EasyOCR लेज़ी-लोडेड है। यदि मेमोरी कम पड़े तो Tesseract इंजन का उपयोग करें। |
+| **Tesseract missing hin data** | लिनक्स पर फ़ॉन्ट या मॉडल न मिलना | `Dockerfile` में `tesseract-ocr-hin`, `tesseract-ocr-san`, `fonts-deva` प्री-इन्स्टॉल्ड हैं और `config.py` पाथ स्वतः डिटेक्ट करता है। |
+| **Permission Denied (Errno 13)** | नॉन-रूट यूज़र फ़ाइल नहीं लिख पा रहा | `Dockerfile` में `chmod -R 777 /app/backend/storage /app/models` सुनिश्चित है। |
 
 ---
 

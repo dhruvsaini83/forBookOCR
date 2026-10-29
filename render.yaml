@@ -9,8 +9,9 @@ services:
     envVars:
       - key: PORT
         value: 8000
+      - key: EASYOCR_MODULE_PATH
+        value: /app/models/easyocr
       - key: ARCHIVAL_STORAGE_POLICY
         value: retain_all
       - key: PYTHONIOENCODING
         value: utf-8
-

@@ -11,7 +11,7 @@ COPY frontend/ ./
 RUN npm run build
 
 # ==============================================================================
-# Stage 2: Hugging Face Spaces Production Container (Python 3.11 + Tesseract + EasyOCR)
+# Stage 2: Production Container (Python 3.11 + Tesseract + EasyOCR) for Render / Docker
 # ==============================================================================
 FROM python:3.11-slim
 
@@ -19,7 +19,7 @@ FROM python:3.11-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONIOENCODING=utf-8 \
-    PORT=7860 \
+    PORT=8000 \
     EASYOCR_MODULE_PATH=/app/models/easyocr \
     HOME=/home/user
 
@@ -35,7 +35,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Set up standard Hugging Face Spaces non-root user (UID 1000)
+# Set up non-root user (UID 1000) for secure container runtime
 RUN useradd -m -u 1000 user
 ENV PATH="/home/user/.local/bin:${PATH}"
 
@@ -65,11 +65,11 @@ RUN mkdir -p backend/storage/uploads backend/storage/processed backend/storage/e
 RUN chown -R 1000:1000 /app && \
     chmod -R 777 /app/backend/storage /app/models
 
-# Switch to Hugging Face standard user
+# Switch to non-root user
 USER user
 
-# Hugging Face Spaces listens on port 7860
-EXPOSE 7860
+# Expose default application port
+EXPOSE 8000
 
-# Launch FastAPI server bound to 0.0.0.0:7860
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "7860"]
+# Launch FastAPI server bound to 0.0.0.0 and dynamic port ($PORT or default 8000)
+CMD ["sh", "-c", "uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

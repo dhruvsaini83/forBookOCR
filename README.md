@@ -1,15 +1,7 @@
----
-title: VaniScript Hindi OCR
-emoji: 📖
-colorFrom: amber
-colorTo: orange
-sdk: docker
-app_port: 7860
-pinned: false
----
-
 # वाणीसंशोधक (VaniScript) — Hindi OCR & Heritage Digital Text Preservation Platform
 
+[![Frontend Live](https://img.shields.io/badge/Frontend-Live_on_Vercel-black.svg?logo=vercel)](https://vaniscript.vercel.app/)
+[![Backend Docker](https://img.shields.io/badge/Backend-Docker_on_Render-black.svg?logo=render)](https://render.com)
 [![Python](https://img.shields.io/badge/Python-3.14-blue.svg)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.162-teal.svg)](https://fastapi.tiangolo.com)
 [![React](https://img.shields.io/badge/React-19.3-61dafb.svg)](https://react.dev)
