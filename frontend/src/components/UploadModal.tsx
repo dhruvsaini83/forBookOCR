@@ -6,7 +6,7 @@ import { translations } from '../i18n/translations';
 interface UploadModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onUploadSuccess: (docId: string) => void;
+  onUploadSuccess: (docId: string, shouldAdjust?: boolean) => void;
   onLoadSample: (sampleId: string) => void;
   samples: Array<{ id: string; title: string; filename: string; collection: string; desc: string }>;
   lang: Language;
@@ -24,6 +24,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState<string>('');
   const [collection, setCollection] = useState<string>('सामान्य (General)');
+  const [adjustBeforeOcr, setAdjustBeforeOcr] = useState<boolean>(true);
   const [autoProcess, setAutoProcess] = useState<boolean>(true);
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -81,7 +82,8 @@ export const UploadModal: React.FC<UploadModalProps> = ({
       formData.append('file', file);
       if (title) formData.append('title', title);
       formData.append('collection_name', collection);
-      formData.append('auto_process', autoProcess ? 'true' : 'false');
+      const shouldAutoProcess = !adjustBeforeOcr && autoProcess;
+      formData.append('auto_process', shouldAutoProcess ? 'true' : 'false');
 
       const res = await fetch('/api/upload', {
         method: 'POST',
@@ -94,7 +96,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({
       }
 
       const data = await res.json();
-      onUploadSuccess(data.document_id);
+      onUploadSuccess(data.document_id, adjustBeforeOcr);
       onClose();
     } catch (err: any) {
       setError(err.message || 'संचिका अपलोड में त्रुटि हुई।');
@@ -272,17 +274,34 @@ export const UploadModal: React.FC<UploadModalProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="autoProcessCheck"
-              checked={autoProcess}
-              onChange={(e) => setAutoProcess(e.target.checked)}
-              className="w-4 h-4 rounded text-vedic-700 focus:ring-vedic-500"
-            />
-            <label htmlFor="autoProcessCheck" className="text-xs text-stone-700 font-devanagari cursor-pointer select-none">
-              {t.autoProcessCheckbox}
-            </label>
+          <div className="space-y-2 pt-1">
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="adjustBeforeOcrCheck"
+                checked={adjustBeforeOcr}
+                onChange={(e) => setAdjustBeforeOcr(e.target.checked)}
+                className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500 border-stone-300"
+              />
+              <label htmlFor="adjustBeforeOcrCheck" className="text-xs font-semibold text-stone-800 font-devanagari cursor-pointer select-none">
+                ✨ {t.adjustBeforeOcrCheckbox}
+              </label>
+            </div>
+
+            {!adjustBeforeOcr && (
+              <div className="flex items-center gap-2 pl-6">
+                <input
+                  type="checkbox"
+                  id="autoProcessCheck"
+                  checked={autoProcess}
+                  onChange={(e) => setAutoProcess(e.target.checked)}
+                  className="w-4 h-4 rounded text-vedic-700 focus:ring-vedic-500 border-stone-300"
+                />
+                <label htmlFor="autoProcessCheck" className="text-xs text-stone-600 font-devanagari cursor-pointer select-none">
+                  {t.autoProcessCheckbox}
+                </label>
+              </div>
+            )}
           </div>
 
           <button

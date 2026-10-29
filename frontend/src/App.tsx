@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   ChevronLeft, ChevronRight, Download, BookOpen, 
-  RefreshCw, UploadCloud, LayoutGrid, FileText, Image as ImageIcon
+  RefreshCw, UploadCloud, LayoutGrid, FileText, Image as ImageIcon, Crop
 } from 'lucide-react';
 import { Header } from './components/Header';
 import { ImageViewer } from './components/ImageViewer';
@@ -12,6 +12,7 @@ import { UploadModal } from './components/UploadModal';
 import { DocumentHistory } from './components/DocumentHistory';
 import { BenchmarkModal } from './components/BenchmarkModal';
 import { ExportModal } from './components/ExportModal';
+import { ImageAdjustmentModal } from './components/ImageAdjustmentModal';
 import type { Language } from './i18n/translations';
 import { translations } from './i18n/translations';
 import type { DocumentData, PageData, WordToken } from './types';
@@ -43,6 +44,25 @@ export const App: React.FC = () => {
   const [isHistoryOpen, setIsHistoryOpen] = useState<boolean>(false);
   const [isBenchmarkOpen, setIsBenchmarkOpen] = useState<boolean>(false);
   const [isExportOpen, setIsExportOpen] = useState<boolean>(false);
+  const [isAdjustmentOpen, setIsAdjustmentOpen] = useState<boolean>(false);
+
+  const handleApplyAdjustmentSuccess = async (pageNum: number) => {
+    if (!currentDoc) return;
+    await loadDocument(currentDoc.id, pageNum);
+  };
+
+  const handleResetAdjustment = async () => {
+    if (!currentDoc || !currentPage) return;
+    try {
+      setIsLoading(true);
+      await api.resetAdjustment(currentDoc.id, currentPageNum, true);
+      await loadDocument(currentDoc.id, currentPageNum);
+    } catch (err) {
+      console.error('Failed to reset adjustment', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const loadDocument = async (docId: string, pageNum = 1) => {
     try {
@@ -250,6 +270,17 @@ export const App: React.FC = () => {
                 </div>
               )}
 
+              {/* Crop & Rotate Adjustment Studio Button */}
+              <button
+                type="button"
+                onClick={() => setIsAdjustmentOpen(true)}
+                className="inline-flex items-center gap-1.5 sm:gap-2 px-3 sm:px-3.5 py-2 rounded-xl border border-vedic-200 bg-vedic-50 hover:bg-vedic-100 text-vedic-900 text-xs font-semibold shadow-2xs transition-colors font-devanagari"
+                aria-label={t.adjustImageBtn}
+              >
+                <Crop className="w-4 h-4 text-vedic-700" />
+                <span>{t.adjustImageBtn}</span>
+              </button>
+
               {/* Export Button */}
               <button
                 type="button"
@@ -340,9 +371,12 @@ export const App: React.FC = () => {
                 <ImageViewer
                   originalUrl={currentPage.original_image_path}
                   enhancedUrl={currentPage.preprocessed_image_path}
+                  adjustedUrl={currentPage.adjusted_image_path}
                   tokens={currentPage.word_tokens}
                   selectedWordIndex={selectedWordIndex}
                   onSelectWord={handleWordSelect}
+                  onOpenAdjustment={() => setIsAdjustmentOpen(true)}
+                  onResetAdjustment={handleResetAdjustment}
                   lang={lang}
                 />
               </div>
@@ -428,7 +462,12 @@ export const App: React.FC = () => {
       <UploadModal
         isOpen={isUploadOpen}
         onClose={() => setIsUploadOpen(false)}
-        onUploadSuccess={(docId) => loadDocument(docId)}
+        onUploadSuccess={async (docId, shouldAdjust) => {
+          await loadDocument(docId, 1);
+          if (shouldAdjust) {
+            setIsAdjustmentOpen(true);
+          }
+        }}
         onLoadSample={handleLoadSampleFromModal}
         samples={samples}
         lang={lang}
@@ -456,6 +495,32 @@ export const App: React.FC = () => {
           docTitle={currentDoc.title}
           unresolvedCount={unresolvedInfo?.total_flagged_tokens || 0}
           failedPagesCount={unresolvedInfo?.failed_pages_count || 0}
+          lang={lang}
+        />
+      )}
+
+      {currentDoc && currentPage && (
+        <ImageAdjustmentModal
+          isOpen={isAdjustmentOpen}
+          onClose={() => setIsAdjustmentOpen(false)}
+          documentId={currentDoc.id}
+          pageNumber={currentPageNum}
+          totalPages={currentDoc.total_pages}
+          originalImageUrl={currentPage.original_image_path}
+          currentAdjustment={currentPage.adjustment_metadata}
+          onApplySuccess={handleApplyAdjustmentSuccess}
+          onSkip={async () => {
+            setIsAdjustmentOpen(false);
+            if (currentPage.status === 'PENDING_ADJUSTMENT' || !currentPage.raw_ocr_text) {
+              setIsLoading(true);
+              try {
+                await api.processDocument(currentDoc.id, currentPageNum);
+                await loadDocument(currentDoc.id, currentPageNum);
+              } finally {
+                setIsLoading(false);
+              }
+            }
+          }}
           lang={lang}
         />
       )}

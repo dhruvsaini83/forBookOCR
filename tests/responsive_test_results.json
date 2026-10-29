@@ -8,7 +8,8 @@
     "innerWidth": 320,
     "langToggled": true,
     "workspaceToggled": true,
-    "modalTested": true,
+    "modalTested": false,
+    "cropStudioTested": true,
     "consoleErrorsCount": 0,
     "screenshot": "tests\\screenshots\\small-mobile_320x568_default.png",
     "status": "PASS"
@@ -22,7 +23,8 @@
     "innerWidth": 360,
     "langToggled": true,
     "workspaceToggled": true,
-    "modalTested": true,
+    "modalTested": false,
+    "cropStudioTested": true,
     "consoleErrorsCount": 0,
     "screenshot": "tests\\screenshots\\common-mobile_360x800_default.png",
     "status": "PASS"
@@ -36,7 +38,8 @@
     "innerWidth": 390,
     "langToggled": true,
     "workspaceToggled": true,
-    "modalTested": true,
+    "modalTested": false,
+    "cropStudioTested": true,
     "consoleErrorsCount": 0,
     "screenshot": "tests\\screenshots\\large-mobile-1_390x844_default.png",
     "status": "PASS"
@@ -50,7 +53,8 @@
     "innerWidth": 430,
     "langToggled": true,
     "workspaceToggled": true,
-    "modalTested": true,
+    "modalTested": false,
+    "cropStudioTested": true,
     "consoleErrorsCount": 0,
     "screenshot": "tests\\screenshots\\large-mobile-2_430x932_default.png",
     "status": "PASS"
@@ -64,7 +68,8 @@
     "innerWidth": 768,
     "langToggled": true,
     "workspaceToggled": true,
-    "modalTested": true,
+    "modalTested": false,
+    "cropStudioTested": true,
     "consoleErrorsCount": 0,
     "screenshot": "tests\\screenshots\\tablet-portrait_768x1024_default.png",
     "status": "PASS"
@@ -78,7 +83,8 @@
     "innerWidth": 1024,
     "langToggled": true,
     "workspaceToggled": true,
-    "modalTested": true,
+    "modalTested": false,
+    "cropStudioTested": true,
     "consoleErrorsCount": 0,
     "screenshot": "tests\\screenshots\\tablet-landscape_1024x768_default.png",
     "status": "PASS"
@@ -92,7 +98,8 @@
     "innerWidth": 1280,
     "langToggled": true,
     "workspaceToggled": true,
-    "modalTested": true,
+    "modalTested": false,
+    "cropStudioTested": true,
     "consoleErrorsCount": 0,
     "screenshot": "tests\\screenshots\\laptop_1280x720_default.png",
     "status": "PASS"
@@ -106,7 +113,8 @@
     "innerWidth": 1440,
     "langToggled": true,
     "workspaceToggled": true,
-    "modalTested": true,
+    "modalTested": false,
+    "cropStudioTested": true,
     "consoleErrorsCount": 0,
     "screenshot": "tests\\screenshots\\desktop_1440x900_default.png",
     "status": "PASS"
@@ -120,7 +128,8 @@
     "innerWidth": 1920,
     "langToggled": true,
     "workspaceToggled": true,
-    "modalTested": true,
+    "modalTested": false,
+    "cropStudioTested": true,
     "consoleErrorsCount": 0,
     "screenshot": "tests\\screenshots\\large-desktop_1920x1080_default.png",
     "status": "PASS"

@@ -1,4 +1,4 @@
-import type { DocumentData, PageData, CorrectionLog, BenchmarkCase } from '../types';
+import type { DocumentData, PageData, CorrectionLog, BenchmarkCase, CropSuggestionResponse, ImageAdjustmentSettings } from '../types';
 
 const API_BASE = '/api';
 
@@ -90,6 +90,35 @@ export const api = {
   async getDocumentUnresolved(docId: string) {
     const res = await fetch(`${API_BASE}/documents/${docId}/unresolved`);
     if (!res.ok) throw new Error('Failed to fetch unresolved details');
+    return res.json();
+  },
+
+  async suggestCrop(docId: string, pageNumber: number): Promise<CropSuggestionResponse> {
+    const res = await fetch(`${API_BASE}/documents/${docId}/pages/${pageNumber}/suggest-crop`, {
+      method: 'POST',
+    });
+    if (!res.ok) throw new Error('Failed to fetch smart crop suggestion');
+    return res.json();
+  },
+
+  async adjustImage(docId: string, pageNumber: number, settings: ImageAdjustmentSettings): Promise<{ success: boolean; page: PageData; adjustment: any }> {
+    const res = await fetch(`${API_BASE}/documents/${docId}/pages/${pageNumber}/adjust`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settings),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Failed to adjust image');
+    }
+    return res.json();
+  },
+
+  async resetAdjustment(docId: string, pageNumber: number, runOcr = true): Promise<{ success: boolean; page: PageData }> {
+    const res = await fetch(`${API_BASE}/documents/${docId}/pages/${pageNumber}/reset-adjustment?run_ocr=${runOcr}`, {
+      method: 'POST',
+    });
+    if (!res.ok) throw new Error('Failed to reset image adjustment');
     return res.json();
   },
 

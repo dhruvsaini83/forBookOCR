@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { ZoomIn, ZoomOut, RotateCw, Maximize2, Eye, EyeOff, ImageOff } from 'lucide-react';
+import { ZoomIn, ZoomOut, RotateCw, Maximize2, Eye, EyeOff, ImageOff, Crop, Undo2 } from 'lucide-react';
 import type { WordToken } from '../types';
 import type { Language } from '../i18n/translations';
 import { translations } from '../i18n/translations';
@@ -7,27 +7,34 @@ import { translations } from '../i18n/translations';
 interface ImageViewerProps {
   originalUrl: string;
   enhancedUrl: string;
+  adjustedUrl?: string;
   tokens: WordToken[];
   selectedWordIndex: number | null;
   onSelectWord: (index: number) => void;
+  onOpenAdjustment?: () => void;
+  onResetAdjustment?: () => Promise<void>;
   lang: Language;
 }
 
 export const ImageViewer: React.FC<ImageViewerProps> = ({
   originalUrl,
   enhancedUrl,
+  adjustedUrl,
   tokens,
   selectedWordIndex,
   onSelectWord,
+  onOpenAdjustment,
+  onResetAdjustment,
   lang,
 }) => {
   const t = translations[lang];
-  const [activeVariant, setActiveVariant] = useState<'original' | 'enhanced'>('enhanced');
+  const [activeVariant, setActiveVariant] = useState<'original' | 'adjusted' | 'enhanced'>('enhanced');
   const [zoom, setZoom] = useState<number>(1);
   const [rotation, setRotation] = useState<number>(0);
   const [showBboxes, setShowBboxes] = useState<boolean>(true);
   const [naturalDimensions, setNaturalDimensions] = useState<{ width: number; height: number }>({ width: 1, height: 1 });
   const [imgError, setImgError] = useState<boolean>(false);
+  const [isResetting, setIsResetting] = useState<boolean>(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -38,6 +45,8 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
 
   const currentImgSrc = activeVariant === 'original' 
     ? formatImgUrl(originalUrl)
+    : activeVariant === 'adjusted' && adjustedUrl
+    ? formatImgUrl(adjustedUrl)
     : formatImgUrl(enhancedUrl);
 
   const handleZoomIn = () => setZoom((prev) => Math.min(Number((prev + 0.25).toFixed(2)), 4.0));
@@ -57,40 +66,95 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
     });
   };
 
+  const handleResetClick = async () => {
+    if (!onResetAdjustment || isResetting) return;
+    try {
+      setIsResetting(true);
+      await onResetAdjustment();
+    } finally {
+      setIsResetting(false);
+    }
+  };
+
   return (
     <div className="flex flex-col h-full bg-stone-100 rounded-2xl border border-stone-200/90 overflow-hidden shadow-2xs">
       {/* Top Toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-2 px-3 sm:px-4 py-2.5 sm:py-3 bg-white border-b border-stone-200 text-xs">
-        {/* Variant Tabs */}
-        <div 
-          role="group" 
-          aria-label="Image view variant"
-          className="flex items-center bg-stone-100 p-0.5 sm:p-1 rounded-xl border border-stone-200/60"
-        >
-          <button
-            type="button"
-            onClick={() => setActiveVariant('original')}
-            className={`px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg text-xs font-devanagari transition-all ${
-              activeVariant === 'original'
-                ? 'bg-white text-vedic-950 shadow-2xs font-bold'
-                : 'text-stone-600 hover:text-stone-900 font-medium'
-            }`}
-            aria-pressed={activeVariant === 'original'}
+        {/* Left Side: Variant Tabs & Adjustment Trigger */}
+        <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+          {/* Variant Tabs */}
+          <div 
+            role="group" 
+            aria-label="Image view variant"
+            className="flex items-center bg-stone-100 p-0.5 sm:p-1 rounded-xl border border-stone-200/60"
           >
-            {t.originalView}
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveVariant('enhanced')}
-            className={`px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg text-xs font-devanagari transition-all ${
-              activeVariant === 'enhanced'
-                ? 'bg-white text-vedic-950 shadow-2xs font-bold'
-                : 'text-stone-600 hover:text-stone-900 font-medium'
-            }`}
-            aria-pressed={activeVariant === 'enhanced'}
-          >
-            {t.enhancedView}
-          </button>
+            <button
+              type="button"
+              onClick={() => setActiveVariant('original')}
+              className={`px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg text-xs font-devanagari transition-all ${
+                activeVariant === 'original'
+                  ? 'bg-white text-vedic-950 shadow-2xs font-bold'
+                  : 'text-stone-600 hover:text-stone-900 font-medium'
+              }`}
+              aria-pressed={activeVariant === 'original'}
+            >
+              {t.originalView}
+            </button>
+            {adjustedUrl && (
+              <button
+                type="button"
+                onClick={() => setActiveVariant('adjusted')}
+                className={`px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg text-xs font-devanagari transition-all ${
+                  activeVariant === 'adjusted'
+                    ? 'bg-white text-vedic-950 shadow-2xs font-bold'
+                    : 'text-stone-600 hover:text-stone-900 font-medium'
+                }`}
+                aria-pressed={activeVariant === 'adjusted'}
+              >
+                {t.adjustedView}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setActiveVariant('enhanced')}
+              className={`px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg text-xs font-devanagari transition-all ${
+                activeVariant === 'enhanced'
+                  ? 'bg-white text-vedic-950 shadow-2xs font-bold'
+                  : 'text-stone-600 hover:text-stone-900 font-medium'
+              }`}
+              aria-pressed={activeVariant === 'enhanced'}
+            >
+              {t.enhancedView}
+            </button>
+          </div>
+
+          {/* Crop & Rotate Studio Trigger Button */}
+          {onOpenAdjustment && (
+            <button
+              type="button"
+              onClick={onOpenAdjustment}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-vedic-300 bg-vedic-50 hover:bg-vedic-100 text-vedic-900 text-xs font-bold transition-colors font-devanagari shadow-2xs"
+              title={t.adjustImageBtn}
+              aria-label={t.adjustImageBtn}
+            >
+              <Crop className="w-3.5 h-3.5 text-vedic-700" />
+              <span>{t.adjustImageBtn}</span>
+            </button>
+          )}
+
+          {/* Reset Adjustment Button (if currently adjusted) */}
+          {adjustedUrl && onResetAdjustment && (
+            <button
+              type="button"
+              onClick={handleResetClick}
+              disabled={isResetting}
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-stone-200 bg-white hover:bg-stone-50 text-stone-600 hover:text-stone-900 text-[11px] font-medium transition-colors font-devanagari shadow-2xs"
+              title="मूल स्थिति पर लौटें (Reset to original scan)"
+            >
+              <Undo2 className="w-3 h-3 text-stone-500" />
+              <span>रीसेट</span>
+            </button>
+          )}
         </div>
 
         {/* View Controls Group */}

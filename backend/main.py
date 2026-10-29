@@ -32,7 +32,21 @@ from core.stage4_linguistic_verifier import run_linguistic_verification
 from core.stage5_consistency_checker import run_consistency_check
 from core.exporter import export_as_txt, export_as_docx, export_as_json, export_as_html_printable
 from core.benchmark import BENCHMARK_CASES, run_benchmark_evaluation
+from core.image_adjuster import detect_smart_crop, apply_image_adjustment, get_image_info
 from samples.sample_data import generate_samples
+
+class CropBoxInput(BaseModel):
+    x: int
+    y: int
+    width: int
+    height: int
+
+class AdjustmentRequest(BaseModel):
+    crop: Optional[CropBoxInput] = None
+    rotation: int = 0
+    fine_rotation: float = 0.0
+    apply_to_all_pages: bool = False
+    run_ocr: bool = True
 
 app = FastAPI(
     title="वाणीसंशोधक API (VaniScript Heritage OCR)",
@@ -100,9 +114,19 @@ def process_single_page_pipeline(doc_id: str, page_number: int, image_path: str)
     page_id = f"{doc_id}_p{page_number}"
     db.update_page_status(doc_id, page_number, "PROCESSING")
     
+    # Check if an adjusted image exists for this page
+    doc_upload_dir = UPLOADS_DIR / doc_id
+    adjusted_path = doc_upload_dir / f"page_{page_number}_adjusted.png"
+    if adjusted_path.exists():
+        target_path = str(adjusted_path)
+        adj_rel_url = to_safe_rel_url(target_path)
+    else:
+        target_path = image_path
+        adj_rel_url = None
+
     try:
         # Stage 1: Preprocessing & Quality Analysis
-        enhanced_path, binarized_path, quality_metrics = preprocess_image_pipeline(image_path, PROCESSED_DIR)
+        enhanced_path, binarized_path, quality_metrics = preprocess_image_pipeline(target_path, PROCESSED_DIR)
         
         # Stage 2: Primary Hindi/Devanagari OCR (with timeout guard)
         stage2_res = run_primary_ocr(enhanced_path, lang="hin+Devanagari+san", timeout=TESSERACT_TIMEOUT_SECONDS)
@@ -149,7 +173,8 @@ def process_single_page_pipeline(doc_id: str, page_number: int, image_path: str)
             reviewed_text=final_verified_text,
             word_tokens=final_tokens,
             stage_metrics=stage_metrics,
-            status=page_status
+            status=page_status,
+            adjusted_img=adj_rel_url
         )
         return qa_report["overall_status"]
     except TimeoutError as te:
@@ -168,7 +193,8 @@ def process_single_page_pipeline(doc_id: str, page_number: int, image_path: str)
             stage_metrics={},
             status="FAILED",
             error_code="OCR_TIMEOUT",
-            error_message=str(te)
+            error_message=str(te),
+            adjusted_img=adj_rel_url
         )
         return "FAILED"
     except Exception as ex:
@@ -187,7 +213,8 @@ def process_single_page_pipeline(doc_id: str, page_number: int, image_path: str)
             stage_metrics={},
             status="FAILED",
             error_code="PROCESSING_ERROR",
-            error_message=f"Processing error: {type(ex).__name__}"
+            error_message=f"Processing error: {type(ex).__name__}",
+            adjusted_img=adj_rel_url
         )
         return "FAILED"
 
@@ -362,6 +389,28 @@ async def upload_document(
                     process_single_page_pipeline(doc_id, p_num, page_paths[p_num - 1])
                     db.update_document_status(doc_id, DOC_STATUS_OCR_COMPLETE, processed_pages=p_num)
             background_tasks.add_task(process_remaining)
+    else:
+        # Initialize page entries in DB so client can access them for adjustment studio before OCR
+        for p_idx, p_path in enumerate(page_paths):
+            p_num = p_idx + 1
+            page_id = f"{doc_id}_p{p_num}"
+            orig_url = to_safe_rel_url(p_path)
+            db.save_page_result(
+                page_id=page_id,
+                doc_id=doc_id,
+                page_number=p_num,
+                original_img=orig_url,
+                preprocessed_img=orig_url,
+                quality_metrics={},
+                raw_text="",
+                original_ocr_text="",
+                verified_text="",
+                reviewed_text="",
+                confirmed_text="",
+                word_tokens=[],
+                stage_metrics={},
+                status="PENDING_ADJUSTMENT"
+            )
             
     return {
         "success": True,
@@ -369,7 +418,7 @@ async def upload_document(
         "title": doc_title,
         "file_type": file_type,
         "total_pages": total_pages,
-        "status": DOC_STATUS_OCR_COMPLETE if auto_process else "pending"
+        "status": DOC_STATUS_OCR_COMPLETE if auto_process else "PENDING_ADJUSTMENT"
     }
 
 @app.post("/api/process/{doc_id}")
@@ -395,27 +444,152 @@ def process_document(doc_id: str, page_number: Optional[int] = Query(None)):
     db.update_document_status(doc_id, DOC_STATUS_OCR_COMPLETE, verification_status=last_status, processed_pages=len(pages_to_process))
     return {"success": True, "document_id": doc_id, "status": last_status}
 
-@app.post("/api/documents/{doc_id}/pages/{page_number}/retry")
-def retry_page_processing(doc_id: str, page_number: int):
-    """Retries processing for a single failed or needs_review page."""
+def get_original_page_file(doc_upload_dir: Path, page_number: int) -> Optional[Path]:
+    """Finds original unadjusted source image for a given page."""
+    for ext in (".png", ".jpg", ".jpeg", ".webp"):
+        p = doc_upload_dir / f"page_{page_number}{ext}"
+        if p.exists():
+            return p
+    candidates = [
+        f for f in doc_upload_dir.glob(f"page_{page_number}.*")
+        if not f.name.endswith(("_adjusted.png", "_enhanced.png", "_binarized.png"))
+    ]
+    return candidates[0] if candidates else None
+
+@app.post("/api/documents/{doc_id}/pages/{page_number}/suggest-crop")
+def suggest_page_crop_endpoint(doc_id: str, page_number: int):
+    """Provides smart Devanagari page and text boundary detection suggestion."""
     doc = db.get_document_by_id(doc_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found.")
         
     doc_upload_dir = UPLOADS_DIR / doc_id
-    candidates = list(doc_upload_dir.glob(f"page_{page_number}.*"))
-    if not candidates:
+    src_file = get_original_page_file(doc_upload_dir, page_number)
+    if not src_file:
         raise HTTPException(status_code=404, detail=f"Source image for page {page_number} not found.")
         
-    # Increment retry count and mark RETRYING
-    db.update_page_status(doc_id, page_number, "RETRYING", increment_retry=True)
-    status_result = process_single_page_pipeline(doc_id, page_number, str(candidates[0]))
+    try:
+        crop_info = detect_smart_crop(str(src_file))
+        return {
+            "success": True,
+            "document_id": doc_id,
+            "page_number": page_number,
+            **crop_info
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to detect smart crop: {str(e)}")
+
+@app.post("/api/documents/{doc_id}/pages/{page_number}/adjust")
+def adjust_page_image_endpoint(doc_id: str, page_number: int, req: AdjustmentRequest):
+    """
+    Applies high-quality single-pass crop and rotation to the original page image.
+    Preserves original scan untouched, generates a derived adjusted image, and optionally re-runs OCR.
+    """
+    doc = db.get_document_by_id(doc_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found.")
+        
+    doc_upload_dir = UPLOADS_DIR / doc_id
+    src_file = get_original_page_file(doc_upload_dir, page_number)
+    if not src_file:
+        raise HTTPException(status_code=404, detail=f"Source image for page {page_number} not found.")
+        
+    # Validate crop if provided
+    crop_dict = None
+    if req.crop:
+        if req.crop.width <= 0 or req.crop.height <= 0 or req.crop.x < 0 or req.crop.y < 0:
+            raise HTTPException(status_code=400, detail="Invalid crop coordinates or dimensions.")
+        crop_dict = req.crop.model_dump() if hasattr(req.crop, "model_dump") else req.crop.dict()
+
+    if abs(req.fine_rotation) > 15.0:
+        raise HTTPException(status_code=400, detail="Fine rotation must be between -15.0 and +15.0 degrees.")
+
+    target_out = doc_upload_dir / f"page_{page_number}_adjusted.png"
+    try:
+        adj_result = apply_image_adjustment(
+            source_path=str(src_file),
+            output_path=str(target_out),
+            crop=crop_dict,
+            rotation=req.rotation,
+            fine_rotation=req.fine_rotation
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Image adjustment failed: {str(e)}")
+
+    adj_metadata = {
+        "crop": crop_dict,
+        "rotation": req.rotation,
+        "fine_rotation": req.fine_rotation,
+        "is_adjusted": True,
+        "adjusted_dimensions": adj_result["adjusted_dimensions"]
+    }
     
+    db.update_page_adjustment(doc_id, page_number, to_safe_rel_url(str(target_out)), adj_metadata)
+
+    # Replicate to other pages if apply_to_all_pages is requested
+    if req.apply_to_all_pages and doc["total_pages"] > 1:
+        for p in range(1, doc["total_pages"] + 1):
+            if p == page_number:
+                continue
+            p_src = get_original_page_file(doc_upload_dir, p)
+            if p_src:
+                p_out = doc_upload_dir / f"page_{p}_adjusted.png"
+                apply_image_adjustment(
+                    source_path=str(p_src),
+                    output_path=str(p_out),
+                    crop=crop_dict,
+                    rotation=req.rotation,
+                    fine_rotation=req.fine_rotation
+                )
+                db.update_page_adjustment(doc_id, p, to_safe_rel_url(str(p_out)), adj_metadata)
+                if req.run_ocr:
+                    process_single_page_pipeline(doc_id, p, str(p_src))
+
+    # Run OCR if requested
+    if req.run_ocr:
+        process_single_page_pipeline(doc_id, page_number, str(src_file))
+        db.update_document_status(doc_id, DOC_STATUS_OCR_COMPLETE)
+
+    updated_page = db.get_page_by_number(doc_id, page_number)
     return {
         "success": True,
         "document_id": doc_id,
         "page_number": page_number,
-        "status": status_result
+        "adjustment": adj_result,
+        "page": updated_page
+    }
+
+@app.post("/api/documents/{doc_id}/pages/{page_number}/reset-adjustment")
+def reset_page_adjustment_endpoint(doc_id: str, page_number: int, run_ocr: bool = True):
+    """Resets page back to original uncropped/unrotated scan."""
+    doc = db.get_document_by_id(doc_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found.")
+        
+    doc_upload_dir = UPLOADS_DIR / doc_id
+    src_file = get_original_page_file(doc_upload_dir, page_number)
+    if not src_file:
+        raise HTTPException(status_code=404, detail=f"Source image for page {page_number} not found.")
+
+    adj_file = doc_upload_dir / f"page_{page_number}_adjusted.png"
+    if adj_file.exists():
+        try:
+            adj_file.unlink()
+        except Exception:
+            pass
+
+    db.reset_page_adjustment(doc_id, page_number)
+
+    if run_ocr:
+        process_single_page_pipeline(doc_id, page_number, str(src_file))
+        db.update_document_status(doc_id, DOC_STATUS_OCR_COMPLETE)
+
+    updated_page = db.get_page_by_number(doc_id, page_number)
+    return {
+        "success": True,
+        "document_id": doc_id,
+        "page_number": page_number,
+        "page": updated_page
     }
 
 @app.get("/api/documents/{doc_id}/pages/{page_number}/status")

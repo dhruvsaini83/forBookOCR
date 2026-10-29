@@ -84,12 +84,43 @@ export interface StageMetrics {
   };
 }
 
+export interface CropBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface ImageAdjustmentSettings {
+  crop?: CropBox | null;
+  rotation: number; // 0 | 90 | 180 | 270
+  fine_rotation: number; // -15.0 to +15.0
+  apply_to_all_pages?: boolean;
+  run_ocr?: boolean;
+  is_adjusted?: boolean;
+  adjusted_dimensions?: { width: number; height: number };
+}
+
+export interface CropSuggestionResponse {
+  success: boolean;
+  document_id: string;
+  page_number: number;
+  crop: CropBox;
+  image_width: number;
+  image_height: number;
+  confidence: number;
+  is_fallback: boolean;
+  coverage_ratio?: number;
+}
+
 export interface PageData {
   id: string;
   document_id: string;
   page_number: number;
   original_image_path: string;
   preprocessed_image_path: string;
+  adjusted_image_path?: string;
+  adjustment_metadata?: ImageAdjustmentSettings;
   quality_metrics: QualityMetrics;
   raw_ocr_text: string;
   original_ocr_text?: string;

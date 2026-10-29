@@ -168,6 +168,31 @@ function isServerHealthy(url) {
       console.warn(`  Modal test warning on ${vp.name}:`, e.message);
     }
 
+    // 5. Test Image Adjustment & Crop Studio Modal
+    let cropStudioTested = false;
+    try {
+      const adjustBtn = page.locator('button:visible:has-text("काटें व घुमाएँ"), button:visible:has-text("Crop & Rotate")').first();
+      if (await adjustBtn.isVisible()) {
+        await adjustBtn.click();
+        await page.waitForTimeout(500);
+
+        const cropModal = page.locator('div[role="dialog"][aria-labelledby="adjustment-studio-title"]');
+        if (await cropModal.isVisible()) {
+          // Capture crop studio view screenshot
+          const cropShotPath = path.join(SCREENSHOTS_DIR, `${vp.name}_${vp.width}x${vp.height}_crop_studio.png`);
+          await page.screenshot({ path: cropShotPath, fullPage: true });
+
+          // Test escape key closes adjustment studio
+          await page.keyboard.press('Escape');
+          await page.waitForTimeout(300);
+          const stillOpen = await cropModal.isVisible().catch(() => false);
+          cropStudioTested = !stillOpen;
+        }
+      }
+    } catch (e) {
+      console.warn(`  Crop studio test warning on ${vp.name}:`, e.message);
+    }
+
     const testPassed = !overflowInfo.hasOverflow && consoleErrors.length === 0;
 
     results.push({
@@ -180,12 +205,13 @@ function isServerHealthy(url) {
       langToggled,
       workspaceToggled,
       modalTested,
+      cropStudioTested,
       consoleErrorsCount: consoleErrors.length,
       screenshot: path.relative(ROOT_DIR, defaultShotPath),
       status: testPassed ? 'PASS' : 'FAIL',
     });
 
-    console.log(`  ✓ Finished ${vp.name}: Overflow=${overflowInfo.hasOverflow ? 'YES (FAIL)' : 'NO (PASS)'}, EscapeKeyModal=${modalTested ? 'PASS' : 'WARN'}, Errors=${consoleErrors.length}`);
+    console.log(`  ✓ Finished ${vp.name}: Overflow=${overflowInfo.hasOverflow ? 'YES (FAIL)' : 'NO (PASS)'}, EscapeKeyModal=${modalTested ? 'PASS' : 'WARN'}, CropStudio=${cropStudioTested ? 'PASS' : 'WARN'}, Errors=${consoleErrors.length}`);
     await context.close();
   }
 
