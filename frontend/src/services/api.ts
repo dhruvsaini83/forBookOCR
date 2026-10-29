@@ -1,6 +1,6 @@
 import type { DocumentData, PageData, CorrectionLog, BenchmarkCase } from '../types';
 
-const API_BASE = 'http://127.0.0.1:8000/api';
+const API_BASE = '/api';
 
 export const api = {
   async getHealth() {
@@ -64,12 +64,32 @@ export const api = {
     return res.json();
   },
 
-  async updatePageText(docId: string, pageNumber: number, verifiedText: string, markConfirmed = false) {
+  async updatePageText(docId: string, pageNumber: number, verifiedText: string, markConfirmed = false, textVersion = 'reviewed') {
     const res = await fetch(`${API_BASE}/documents/${docId}/pages/${pageNumber}/text`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ verified_text: verifiedText, mark_confirmed: markConfirmed }),
+      body: JSON.stringify({ verified_text: verifiedText, mark_confirmed: markConfirmed, text_version: textVersion }),
     });
+    return res.json();
+  },
+
+  async retryPage(docId: string, pageNumber: number) {
+    const res = await fetch(`${API_BASE}/documents/${docId}/pages/${pageNumber}/retry`, {
+      method: 'POST',
+    });
+    if (!res.ok) throw new Error('Failed to retry page processing');
+    return res.json();
+  },
+
+  async getPageStatus(docId: string, pageNumber: number) {
+    const res = await fetch(`${API_BASE}/documents/${docId}/pages/${pageNumber}/status`);
+    if (!res.ok) throw new Error('Failed to fetch page status');
+    return res.json();
+  },
+
+  async getDocumentUnresolved(docId: string) {
+    const res = await fetch(`${API_BASE}/documents/${docId}/unresolved`);
+    if (!res.ok) throw new Error('Failed to fetch unresolved details');
     return res.json();
   },
 
@@ -78,8 +98,8 @@ export const api = {
     return res.json();
   },
 
-  getExportUrl(docId: string, format: 'txt' | 'docx' | 'json' | 'html') {
-    return `${API_BASE}/export/${docId}?format=${format}`;
+  getExportUrl(docId: string, format: 'txt' | 'docx' | 'json' | 'html', textVersion: 'reviewed' | 'confirmed' | 'original_ocr' = 'reviewed') {
+    return `${API_BASE}/export/${docId}?format=${format}&text_version=${textVersion}`;
   },
 
   async listSamples(): Promise<{ samples: Array<{ id: string; title: string; filename: string; collection: string; desc: string }> }> {

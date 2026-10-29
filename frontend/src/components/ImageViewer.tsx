@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { ZoomIn, ZoomOut, RotateCw, Maximize2, Eye, EyeOff } from 'lucide-react';
+import { ZoomIn, ZoomOut, RotateCw, Maximize2, Eye, EyeOff, ImageOff } from 'lucide-react';
 import type { WordToken } from '../types';
 import type { Language } from '../i18n/translations';
 import { translations } from '../i18n/translations';
@@ -27,15 +27,21 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
   const [rotation, setRotation] = useState<number>(0);
   const [showBboxes, setShowBboxes] = useState<boolean>(true);
   const [naturalDimensions, setNaturalDimensions] = useState<{ width: number; height: number }>({ width: 1, height: 1 });
+  const [imgError, setImgError] = useState<boolean>(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const currentImgSrc = activeVariant === 'original' 
-    ? (originalUrl.startsWith('http') ? originalUrl : `http://127.0.0.1:8000${originalUrl}`)
-    : (enhancedUrl.startsWith('http') ? enhancedUrl : `http://127.0.0.1:8000${enhancedUrl}`);
+  const formatImgUrl = (url: string) => {
+    if (!url) return '';
+    return url.startsWith('http') || url.startsWith('/') ? url : `/${url}`;
+  };
 
-  const handleZoomIn = () => setZoom((prev) => Math.min(prev + 0.25, 4.0));
-  const handleZoomOut = () => setZoom((prev) => Math.max(prev - 0.25, 0.5));
+  const currentImgSrc = activeVariant === 'original' 
+    ? formatImgUrl(originalUrl)
+    : formatImgUrl(enhancedUrl);
+
+  const handleZoomIn = () => setZoom((prev) => Math.min(Number((prev + 0.25).toFixed(2)), 4.0));
+  const handleZoomOut = () => setZoom((prev) => Math.max(Number((prev - 0.25).toFixed(2)), 0.5));
   const handleResetZoom = () => {
     setZoom(1);
     setRotation(0);
@@ -44,6 +50,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
 
   const handleImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
     const img = e.currentTarget;
+    setImgError(false);
     setNaturalDimensions({
       width: img.naturalWidth || 1,
       height: img.naturalHeight || 1,
@@ -51,78 +58,111 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
   };
 
   return (
-    <div className="flex flex-col h-full bg-stone-100 rounded-2xl border border-stone-200 overflow-hidden shadow-sm">
+    <div className="flex flex-col h-full bg-stone-100 rounded-2xl border border-stone-200/90 overflow-hidden shadow-2xs">
       {/* Top Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 bg-white border-b border-stone-200 text-xs">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-3 sm:px-4 py-2.5 sm:py-3 bg-white border-b border-stone-200 text-xs">
         {/* Variant Tabs */}
-        <div className="flex items-center bg-stone-100 p-1 rounded-xl">
+        <div 
+          role="group" 
+          aria-label="Image view variant"
+          className="flex items-center bg-stone-100 p-0.5 sm:p-1 rounded-xl border border-stone-200/60"
+        >
           <button
+            type="button"
             onClick={() => setActiveVariant('original')}
-            className={`px-3 py-1.5 rounded-lg font-medium transition-all ${
+            className={`px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg text-xs font-devanagari transition-all ${
               activeVariant === 'original'
-                ? 'bg-white text-vedic-900 shadow-xs font-semibold'
-                : 'text-stone-600 hover:text-stone-900'
+                ? 'bg-white text-vedic-950 shadow-2xs font-bold'
+                : 'text-stone-600 hover:text-stone-900 font-medium'
             }`}
+            aria-pressed={activeVariant === 'original'}
           >
             {t.originalView}
           </button>
           <button
+            type="button"
             onClick={() => setActiveVariant('enhanced')}
-            className={`px-3 py-1.5 rounded-lg font-medium transition-all ${
+            className={`px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg text-xs font-devanagari transition-all ${
               activeVariant === 'enhanced'
-                ? 'bg-white text-vedic-900 shadow-xs font-semibold'
-                : 'text-stone-600 hover:text-stone-900'
+                ? 'bg-white text-vedic-950 shadow-2xs font-bold'
+                : 'text-stone-600 hover:text-stone-900 font-medium'
             }`}
+            aria-pressed={activeVariant === 'enhanced'}
           >
             {t.enhancedView}
           </button>
         </div>
 
-        {/* View Controls */}
-        <div className="flex items-center gap-1.5">
+        {/* View Controls Group */}
+        <div className="flex items-center gap-1 sm:gap-1.5 flex-wrap">
+          {/* Bounding Box Toggle */}
           <button
+            type="button"
             onClick={() => setShowBboxes(!showBboxes)}
-            className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
+            className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors font-devanagari ${
               showBboxes
-                ? 'bg-amber-50 text-amber-800 border-amber-300'
+                ? 'bg-amber-50 text-amber-900 border-amber-300'
                 : 'bg-white text-stone-600 border-stone-200 hover:bg-stone-50'
             }`}
             title={t.toggleBboxes}
+            aria-label={t.toggleBboxes}
+            aria-pressed={showBboxes}
           >
-            {showBboxes ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+            {showBboxes ? <Eye className="w-3.5 h-3.5 text-amber-700" /> : <EyeOff className="w-3.5 h-3.5" />}
             <span className="hidden sm:inline">परिसीमा</span>
           </button>
 
-          <div className="h-4 w-px bg-stone-200 mx-1" />
+          <div className="h-4 w-px bg-stone-200 mx-0.5 sm:mx-1" />
 
+          {/* Zoom Out */}
           <button
-            onClick={handleZoomIn}
-            className="p-1.5 rounded-lg border border-stone-200 bg-white text-stone-700 hover:bg-stone-50"
-            title={t.zoomIn}
-          >
-            <ZoomIn className="w-4 h-4" />
-          </button>
-          <span className="text-stone-500 font-mono text-[11px] min-w-[36px] text-center">
-            {Math.round(zoom * 100)}%
-          </span>
-          <button
+            type="button"
             onClick={handleZoomOut}
-            className="p-1.5 rounded-lg border border-stone-200 bg-white text-stone-700 hover:bg-stone-50"
+            disabled={zoom <= 0.5}
+            className="p-1.5 rounded-lg border border-stone-200 bg-white text-stone-700 hover:bg-stone-50 disabled:opacity-40 transition-colors"
             title={t.zoomOut}
+            aria-label={t.zoomOut}
           >
             <ZoomOut className="w-4 h-4" />
           </button>
+
+          <span 
+            className="text-stone-600 font-mono text-[11px] min-w-[34px] sm:min-w-[40px] text-center select-none"
+            aria-label={`Zoom level ${Math.round(zoom * 100)} percent`}
+          >
+            {Math.round(zoom * 100)}%
+          </span>
+
+          {/* Zoom In */}
           <button
+            type="button"
+            onClick={handleZoomIn}
+            disabled={zoom >= 4.0}
+            className="p-1.5 rounded-lg border border-stone-200 bg-white text-stone-700 hover:bg-stone-50 disabled:opacity-40 transition-colors"
+            title={t.zoomIn}
+            aria-label={t.zoomIn}
+          >
+            <ZoomIn className="w-4 h-4" />
+          </button>
+
+          {/* Rotate */}
+          <button
+            type="button"
             onClick={handleRotate}
-            className="p-1.5 rounded-lg border border-stone-200 bg-white text-stone-700 hover:bg-stone-50"
+            className="p-1.5 rounded-lg border border-stone-200 bg-white text-stone-700 hover:bg-stone-50 transition-colors"
             title={t.rotateRight}
+            aria-label={t.rotateRight}
           >
             <RotateCw className="w-4 h-4" />
           </button>
+
+          {/* Reset View */}
           <button
+            type="button"
             onClick={handleResetZoom}
-            className="p-1.5 rounded-lg border border-stone-200 bg-white text-stone-700 hover:bg-stone-50"
+            className="p-1.5 rounded-lg border border-stone-200 bg-white text-stone-700 hover:bg-stone-50 transition-colors"
             title={t.resetZoom}
+            aria-label={t.resetZoom}
           >
             <Maximize2 className="w-4 h-4" />
           </button>
@@ -132,93 +172,111 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
       {/* Canvas Viewport */}
       <div
         ref={containerRef}
-        className="relative flex-1 overflow-auto p-4 flex items-center justify-center bg-stone-900/5 select-none"
-        style={{ minHeight: '440px' }}
+        className="relative flex-1 overflow-auto p-3 sm:p-5 flex items-center justify-center bg-stone-900/5 select-none min-h-[360px]"
+        tabIndex={0}
+        aria-label="Document Image Canvas"
       >
-        <div
-          className="relative transition-transform duration-100 ease-out inline-block shadow-lg rounded-lg overflow-hidden bg-white"
-          style={{
-            transform: `scale(${zoom}) rotate(${rotation}deg)`,
-            transformOrigin: 'center center',
-          }}
-        >
-          <img
-            src={currentImgSrc}
-            alt="Source Hindi Document"
-            onLoad={handleImageLoad}
-            className="max-w-none block pointer-events-none"
-            style={{ maxHeight: '72vh' }}
-          />
+        {imgError || !currentImgSrc ? (
+          <div className="flex flex-col items-center justify-center p-8 text-stone-400 text-center font-devanagari">
+            <ImageOff className="w-10 h-10 mb-2 opacity-60" />
+            <p className="text-sm">दस्तावेज़ छवि उपलब्ध नहीं है अथवा लोड नहीं हो सकी।</p>
+          </div>
+        ) : (
+          <div
+            className="relative transition-transform duration-100 ease-out inline-block shadow-md rounded-lg overflow-hidden bg-white max-w-full"
+            style={{
+              transform: `scale(${zoom}) rotate(${rotation}deg)`,
+              transformOrigin: 'center center',
+            }}
+          >
+            <img
+              src={currentImgSrc}
+              alt="Source Hindi Document"
+              onLoad={handleImageLoad}
+              onError={() => setImgError(true)}
+              className="max-w-none block pointer-events-none object-contain"
+              style={{ maxHeight: '70vh', maxWidth: '100%' }}
+            />
 
-          {/* Word Bounding Boxes Layer */}
-          {showBboxes && tokens.map((tok) => {
-            const [x, y, w, h] = tok.bbox;
-            const leftPct = (x / naturalDimensions.width) * 100;
-            const topPct = (y / naturalDimensions.height) * 100;
-            const widthPct = (w / naturalDimensions.width) * 100;
-            const heightPct = (h / naturalDimensions.height) * 100;
+            {/* Word Bounding Boxes Layer */}
+            {showBboxes && tokens.map((tok) => {
+              const [x, y, w, h] = tok.bbox;
+              const leftPct = (x / naturalDimensions.width) * 100;
+              const topPct = (y / naturalDimensions.height) * 100;
+              const widthPct = (w / naturalDimensions.width) * 100;
+              const heightPct = (h / naturalDimensions.height) * 100;
 
-            const isSelected = selectedWordIndex === tok.index;
-            const isDisagreement = Boolean(tok.disagreement_type);
-            const isAnomaly = Boolean(tok.unicode_anomalies && tok.unicode_anomalies.length > 0);
-            const isLowConf = tok.confidence < 65.0;
+              const isSelected = selectedWordIndex === tok.index;
+              const isDisagreement = Boolean(tok.disagreement_type);
+              const isAnomaly = Boolean(tok.unicode_anomalies && tok.unicode_anomalies.length > 0);
+              const isLowConf = tok.confidence < 65.0;
 
-            let borderStyle = 'border-emerald-500/60 bg-emerald-500/10 hover:bg-emerald-500/25';
-            if (isDisagreement) {
-              borderStyle = 'border-amber-500 bg-amber-500/20 hover:bg-amber-500/35';
-            } else if (isAnomaly) {
-              borderStyle = 'border-purple-600 bg-purple-500/20 hover:bg-purple-500/35';
-            } else if (isLowConf) {
-              borderStyle = 'border-rose-500 bg-rose-500/20 hover:bg-rose-500/35';
-            }
+              let borderStyle = 'border-emerald-500/70 bg-emerald-500/10 hover:bg-emerald-500/30';
+              if (isDisagreement) {
+                borderStyle = 'border-amber-500 bg-amber-500/25 hover:bg-amber-500/40';
+              } else if (isAnomaly) {
+                borderStyle = 'border-purple-600 bg-purple-500/25 hover:bg-purple-500/40';
+              } else if (isLowConf) {
+                borderStyle = 'border-rose-500 bg-rose-500/25 hover:bg-rose-500/40';
+              }
 
-            if (isSelected) {
-              borderStyle = 'ring-3 ring-vedic-600 border-vedic-600 bg-vedic-500/30 z-20';
-            }
+              if (isSelected) {
+                borderStyle = 'ring-2 ring-vedic-600 border-vedic-700 bg-vedic-500/35 z-20 shadow-xs';
+              }
 
-            return (
-              <div
-                key={`bbox-${tok.index}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onSelectWord(tok.index);
-                }}
-                className={`absolute border rounded-[2px] cursor-pointer transition-all ${borderStyle}`}
-                style={{
-                  left: `${leftPct}%`,
-                  top: `${topPct}%`,
-                  width: `${widthPct}%`,
-                  height: `${heightPct}%`,
-                }}
-                title={`${tok.text} (विश्वास: ${tok.confidence}%)`}
-              />
-            );
-          })}
-        </div>
+              return (
+                <div
+                  key={`bbox-${tok.index}`}
+                  role="button"
+                  tabIndex={0}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectWord(tok.index);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      onSelectWord(tok.index);
+                    }
+                  }}
+                  className={`absolute border rounded-[2px] cursor-pointer transition-all ${borderStyle}`}
+                  style={{
+                    left: `${leftPct}%`,
+                    top: `${topPct}%`,
+                    width: `${widthPct}%`,
+                    height: `${heightPct}%`,
+                  }}
+                  title={`${tok.text} (विश्वास: ${tok.confidence}%)`}
+                  aria-label={`${tok.text}, विश्वास ${tok.confidence} प्रतिशत`}
+                />
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Legend Footer */}
-      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2 bg-stone-50 border-t border-stone-200 text-[11px] text-stone-600">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3 px-3 sm:px-4 py-2 bg-stone-50 border-t border-stone-200 text-[11px] text-stone-600 font-devanagari">
+        <div className="flex items-center gap-2.5 sm:gap-4 flex-wrap">
           <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" />
-            सत्यापित (Verified)
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block shrink-0" />
+            <span>सत्यापित (Verified)</span>
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block" />
-            मतभेद (Disagreement)
+            <span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block shrink-0" />
+            <span>मतभेद (Disagreement)</span>
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-purple-600 inline-block" />
-            यूनिकोड/प्राचीन (Linguistic)
+            <span className="w-2.5 h-2.5 rounded-full bg-purple-600 inline-block shrink-0" />
+            <span>यूनिकोड (Linguistic)</span>
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block" />
-            संदिग्ध (Low Conf)
+            <span className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block shrink-0" />
+            <span>संदिग्ध (Low Conf)</span>
           </span>
         </div>
-        <div className="font-mono text-[10px] text-stone-400">
-          {tokens.length} देवनागरी शब्द चिह्नित
+        <div className="font-mono text-[10px] text-stone-500">
+          {tokens.length} शब्द चिह्नित
         </div>
       </div>
     </div>

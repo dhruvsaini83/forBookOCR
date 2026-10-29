@@ -1,5 +1,9 @@
 import difflib
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
+
+DEVANAGARI_MATRAS = set('ािीुूृॄॢॣेैोौँंः')
+DEVANAGARI_VIRAMA = '्'
+PUNCTUATION_CHARS = set('।॥,.;:-!?\'"()[]{}')
 
 def compute_levenshtein_distance(seq1: List[Any], seq2: List[Any]) -> int:
     """Computes standard edit distance between two sequences (characters or words)."""
@@ -38,7 +42,34 @@ def calculate_wer(reference: str, hypothesis: str) -> float:
     dist = compute_levenshtein_distance(ref_words, hyp_words)
     return round((dist / len(ref_words)) * 100, 2)
 
-# Benchmark Test Suite: Historical Hindi, Religious Verses, and Archaic Typography
+def calculate_matra_error_rate(reference: str, hypothesis: str) -> float:
+    """Calculates Error Rate specifically across Devanagari vowel signs and nasal modifiers."""
+    ref_matras = [c for c in reference if c in DEVANAGARI_MATRAS]
+    hyp_matras = [c for c in hypothesis if c in DEVANAGARI_MATRAS]
+    if not ref_matras:
+        return 0.0 if not hyp_matras else 100.0
+    dist = compute_levenshtein_distance(ref_matras, hyp_matras)
+    return round((dist / len(ref_matras)) * 100, 2)
+
+def calculate_conjunct_error_rate(reference: str, hypothesis: str) -> float:
+    """Calculates Error Rate specifically across Devanagari halant (virama) conjunct markers."""
+    ref_halants = [c for c in reference if c == DEVANAGARI_VIRAMA]
+    hyp_halants = [c for c in hypothesis if c == DEVANAGARI_VIRAMA]
+    if not ref_halants:
+        return 0.0 if not hyp_halants else 100.0
+    dist = compute_levenshtein_distance(ref_halants, hyp_halants)
+    return round((dist / len(ref_halants)) * 100, 2)
+
+def calculate_punctuation_error_rate(reference: str, hypothesis: str) -> float:
+    """Calculates Error Rate on traditional and standard punctuation (danda, double danda, commas)."""
+    ref_punct = [c for c in reference if c in PUNCTUATION_CHARS]
+    hyp_punct = [c for c in hypothesis if c in PUNCTUATION_CHARS]
+    if not ref_punct:
+        return 0.0 if not hyp_punct else 100.0
+    dist = compute_levenshtein_distance(ref_punct, hyp_punct)
+    return round((dist / len(ref_punct)) * 100, 2)
+
+# Benchmark Test Suite: Authentic Historical Hindi & Sanskritized Verses
 BENCHMARK_CASES = [
     {
         "id": "ramcharitmanas_doha",
@@ -92,18 +123,35 @@ BENCHMARK_CASES = [
     }
 ]
 
-def run_benchmark_evaluation(ocr_output: str, ground_truth: str) -> Dict[str, Any]:
-    """Runs a complete accuracy assessment comparing OCR output against ground truth."""
-    cer = calculate_cer(ground_truth, ocr_output)
-    wer = calculate_wer(ground_truth, ocr_output)
+def run_benchmark_evaluation(ocr_output: Optional[str], ground_truth: Optional[str]) -> Dict[str, Any]:
+    """
+    Runs a rigorous accuracy assessment comparing OCR output against ground truth.
+    If ground truth is absent or empty, honestly returns unconfigured status without fabrication.
+    """
+    if not ground_truth or not ground_truth.strip():
+        return {
+            "status": "Benchmark dataset not configured",
+            "available_samples": 0,
+            "metrics": None
+        }
+        
+    safe_hyp = ocr_output or ""
+    cer = calculate_cer(ground_truth, safe_hyp)
+    wer = calculate_wer(ground_truth, safe_hyp)
+    matra_er = calculate_matra_error_rate(ground_truth, safe_hyp)
+    conjunct_er = calculate_conjunct_error_rate(ground_truth, safe_hyp)
+    punct_er = calculate_punctuation_error_rate(ground_truth, safe_hyp)
     
-    # Character count
     ref_len = len(ground_truth)
-    hyp_len = len(ocr_output)
+    hyp_len = len(safe_hyp)
     
     return {
+        "status": "COMPLETED",
         "cer_percentage": cer,
         "wer_percentage": wer,
+        "matra_error_rate_pct": matra_er,
+        "conjunct_error_rate_pct": conjunct_er,
+        "punctuation_error_rate_pct": punct_er,
         "accuracy_score_pct": max(0.0, round(100.0 - cer, 2)),
         "reference_char_count": ref_len,
         "extracted_char_count": hyp_len,

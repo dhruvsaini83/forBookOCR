@@ -44,8 +44,35 @@ body {
   line-height: 1.85;
 }
 
-/* Canvas & Image Workspace Controls */
-.image-canvas-container {
-  touch-action: none;
-  user-select: none;
+/* Themed selection */
+::selection {
+  background-color: #fce6cb;
+  color: #411c09;
+}
+
+/* Accessible focus outline */
+:focus-visible {
+  outline: 2px solid #ba5314;
+  outline-offset: 2px;
+}
+
+/* Eliminate mobile 300ms tap delay and handle touch targets */
+button, a, input, select, textarea {
+  touch-action: manipulation;
+}
+
+/* Prevent accidental horizontal overflow */
+html, body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+/* Reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

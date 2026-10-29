@@ -31,6 +31,25 @@ HISTORICAL_RELIGIOUS_LEXICON = {
     "जसु": {"type": "archaic_spelling", "modern": "यश", "info": "प्राकृत/अपभ्रंश प्रभाव"},
     "दायकु": {"type": "archaic_spelling", "modern": "दायक", "info": "प्राचीन छंद रूप"},
     "चारि": {"type": "archaic_spelling", "modern": "चार", "info": "प्राचीन अवधी संख्या"},
+    "सिय": {"type": "archaic_spelling", "modern": "सीता", "info": "प्राचीन अवधी रूप"},
+    "सनेह": {"type": "archaic_spelling", "modern": "स्नेह", "info": "प्राचीन अवधी/ब्रज रूप"},
+    "अमल": {"type": "traditional", "info": "निर्मल / शुद्ध"},
+    "पवनतनय": {"type": "traditional", "info": "पवनपुत्र श्रीहनुमान"},
+    "संकटहरन": {"type": "traditional", "info": "संकटमोचन"},
+    "बुद्धिहीन": {"type": "traditional", "info": "बुद्धि रहित"},
+    "तनु": {"type": "traditional", "info": "शरीर"},
+    "जानिके": {"type": "traditional", "info": "जानकर"},
+    "सुमिरौ": {"type": "traditional", "info": "स्मरण करता हूँ"},
+    "पवन-कुमार": {"type": "traditional", "info": "पवनकुमार"},
+    "पवनकुमार": {"type": "traditional", "info": "पवनकुमार"},
+    "बल": {"type": "traditional", "info": "शक्ति"},
+    "बुधि": {"type": "archaic_spelling", "modern": "बुद्धि", "info": "प्राचीन अवधी रूप"},
+    "बिद्या": {"type": "archaic_spelling", "modern": "विद्या", "info": "प्राचीन अवधी रूप"},
+    "देहु": {"type": "traditional", "info": "दीजिए"},
+    "मोहि": {"type": "traditional", "info": "मुझे"},
+    "हरहु": {"type": "traditional", "info": "हरिए"},
+    "कलेस": {"type": "archaic_spelling", "modern": "क्लेश", "info": "प्राचीन अवधी रूप"},
+    "बिकार": {"type": "archaic_spelling", "modern": "विकार", "info": "प्राचीन अवधी रूप"},
     "माला": {"type": "traditional", "info": "सुमिरन माला"},
     "फेरत": {"type": "traditional", "info": "घुमाते हुए"},
     "जुग": {"type": "archaic_spelling", "modern": "युग", "info": "संत भाषा रूप"},
@@ -61,7 +80,24 @@ def analyze_unicode_integrity(word: str) -> List[Tuple[str, str, str]]:
     """
     anomalies = []
     
-    # Check 1: Consecutive vowel signs (e.g. क + ो + ौ)
+    # Check 0: NFC Normalization check
+    nfc_word = unicodedata.normalize('NFC', word)
+    if word != nfc_word:
+        anomalies.append((
+            "NON_NFC_NORMALIZATION",
+            "यूनिकोड डीकंपोज़्ड (गैर-NFC) वर्ण अनुक्रम पाया गया",
+            "Non-canonical decomposed Unicode sequence detected"
+        ))
+        
+    # Check 1: Leading dependent matra without base letter
+    if word and word[0] in DEPENDENT_MATRAS:
+        anomalies.append((
+            "LEADING_MATRA",
+            f"शब्द के प्रारंभ में अमान्य स्वतंत्र मात्रा ('{word[0]}')",
+            f"Invalid leading dependent matra ('{word[0]}') without base character"
+        ))
+
+    # Check 2: Consecutive vowel signs (e.g. क + ो + ौ)
     for i in range(len(word) - 1):
         if word[i] in DEPENDENT_MATRAS and word[i+1] in DEPENDENT_MATRAS:
             anomalies.append((
@@ -70,7 +106,7 @@ def analyze_unicode_integrity(word: str) -> List[Tuple[str, str, str]]:
                 f"Invalid consecutive matras: '{word[i]}' and '{word[i+1]}' together"
             ))
             
-    # Check 2: Matra applied directly to independent vowel (e.g. अ + ो)
+    # Check 3: Matra applied directly to independent vowel (e.g. अ + ो)
     for i in range(len(word) - 1):
         if word[i] in INDEPENDENT_VOWELS and word[i+1] in DEPENDENT_MATRAS:
             anomalies.append((
@@ -79,7 +115,7 @@ def analyze_unicode_integrity(word: str) -> List[Tuple[str, str, str]]:
                 f"Invalid matra '{word[i+1]}' attached to independent vowel '{word[i]}'"
             ))
             
-    # Check 3: Orphaned virama/halant at start of word
+    # Check 4: Orphaned virama/halant at start of word
     if word.startswith(VIRAMA):
         anomalies.append((
             "LEADING_VIRAMA",
@@ -87,7 +123,7 @@ def analyze_unicode_integrity(word: str) -> List[Tuple[str, str, str]]:
             "Invalid leading virama ('्') at word start"
         ))
         
-    # Check 4: Multiple consecutive halants
+    # Check 5: Multiple consecutive halants
     if VIRAMA + VIRAMA in word:
         anomalies.append((
             "DOUBLE_VIRAMA",
@@ -95,7 +131,7 @@ def analyze_unicode_integrity(word: str) -> List[Tuple[str, str, str]]:
             "Invalid double virama sequence"
         ))
         
-    # Check 5: Duplicate anusvara or chandrabindu
+    # Check 6: Duplicate anusvara or chandrabindu
     if "ंं" in word or "ँँ" in word or "ंँ" in word:
         anomalies.append((
             "DUPLICATE_NASAL_MARK",
@@ -103,7 +139,7 @@ def analyze_unicode_integrity(word: str) -> List[Tuple[str, str, str]]:
             "Duplicate nasal mark sequence"
         ))
         
-    # Check 6: Latin characters accidentally embedded in Hindi word (common OCR font bug)
+    # Check 7: Latin characters accidentally embedded in Hindi word (common OCR font bug)
     latin_chars = [c for c in word if 'a' <= c.lower() <= 'z']
     if latin_chars:
         anomalies.append((
@@ -112,6 +148,16 @@ def analyze_unicode_integrity(word: str) -> List[Tuple[str, str, str]]:
             f"Unwanted Latin characters embedded in Hindi word: '{''.join(latin_chars)}'"
         ))
         
+    # Check 8: Zero-width characters (ZWJ / ZWNJ) misuse
+    for i, ch in enumerate(word):
+        if ch in ('\u200C', '\u200D'):
+            if i == 0 or word[i - 1] != VIRAMA:
+                anomalies.append((
+                    "INVALID_ZERO_WIDTH",
+                    "शून्य-चौड़ाई वर्ण (ZWJ/ZWNJ) का अमान्य स्थान (केवल हलन्त के उपरांत मान्य)",
+                    "Invalid placement of zero-width joiner/non-joiner (only allowed after virama)"
+                ))
+
     return anomalies
 
 def find_lexicon_match_or_suggestion(word: str) -> Dict[str, Any]:
@@ -195,7 +241,10 @@ def run_linguistic_verification(word_tokens: List[Dict[str, Any]]) -> Tuple[List
         tok["unicode_anomalies"] = anomalies
         if anomalies:
             unicode_anomalies_count += 1
-            tok["flags"].append("UNICODE_ANOMALY")
+            if "UNICODE_ANOMALY" not in tok["flags"]:
+                tok["flags"].append("UNICODE_ANOMALY")
+            if "UNICODE_WARNING" not in tok["flags"]:
+                tok["flags"].append("UNICODE_WARNING")
             tok["status"] = "needs_review"
             tok["linguistic_note_hi"] = anomalies[0][1]
             tok["linguistic_note_en"] = anomalies[0][2]
@@ -206,7 +255,10 @@ def run_linguistic_verification(word_tokens: List[Dict[str, Any]]) -> Tuple[List
         
         if lex_res["is_historical"]:
             historical_preserved_count += 1
-            tok["flags"].append("HISTORICAL_PRESERVED")
+            if "HISTORICAL_PRESERVED" not in tok["flags"]:
+                tok["flags"].append("HISTORICAL_PRESERVED")
+            if "HISTORICAL_WORD_PRESERVED" not in tok["flags"]:
+                tok["flags"].append("HISTORICAL_WORD_PRESERVED")
             # If word is verified historical, mark it with informative badge
             if not anomalies and tok["confidence"] >= 65.0:
                 tok["status"] = "verified_historical"
@@ -231,3 +283,4 @@ def run_linguistic_verification(word_tokens: List[Dict[str, Any]]) -> Tuple[List
     }
     
     return verified_tokens, metrics
+

@@ -69,20 +69,26 @@ def classify_difference(word_a: str, word_b: str) -> Tuple[str, str, str]:
         f"General word discrepancy: '{word_a}' vs '{word_b}'"
     )
 
-def run_cross_verification(image_path: str, primary_tokens: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+def run_cross_verification(image_path: str, primary_tokens: List[Dict[str, Any]], timeout: int = 30) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """
-    Stage 3: Independent OCR Cross-Verification.
-    Runs a secondary independent recognition pass with dedicated Devanagari script model
+    Stage 3: Secondary Tesseract OCR Pass (Cross-Model/Configuration OCR Comparison).
+    Runs a secondary recognition pass with dedicated Devanagari script model (PSM 3)
     and compares output against primary extraction.
+    Note: Both passes utilize Tesseract with different language/page-segmentation models.
     """
     img = Image.open(image_path)
     
     # Secondary pass: Dedicated Devanagari script model with PSM 3 (auto page segmentation)
-    secondary_text_raw = pytesseract.image_to_string(
-        img,
-        lang="Devanagari",
-        config="--oem 1 --psm 3"
-    )
+    try:
+        secondary_text_raw = pytesseract.image_to_string(
+            img,
+            lang="Devanagari",
+            config="--oem 1 --psm 3",
+            timeout=timeout
+        )
+    except pytesseract.pytesseract.TesseractTimeoutError:
+        # Fall back gracefully if secondary pass times out
+        secondary_text_raw = ""
     
     secondary_words = [w.strip() for w in secondary_text_raw.split() if w.strip()]
     primary_words = [t["text"] for t in primary_tokens]
@@ -117,14 +123,17 @@ def run_cross_verification(image_path: str, primary_tokens: List[Dict[str, Any]]
                 aligned_tokens[idx]["disagreement_type"] = diff_type
                 aligned_tokens[idx]["discrepancy_note_hi"] = exp_hi
                 aligned_tokens[idx]["discrepancy_note_en"] = exp_en
-                aligned_tokens[idx]["flags"].append("STAGE3_DISAGREEMENT")
+                if "STAGE3_DISAGREEMENT" not in aligned_tokens[idx]["flags"]:
+                    aligned_tokens[idx]["flags"].append("STAGE3_DISAGREEMENT")
+                if "DISAGREEMENT" not in aligned_tokens[idx]["flags"]:
+                    aligned_tokens[idx]["flags"].append("DISAGREEMENT")
                 aligned_tokens[idx]["status"] = "needs_review"
 
     total_words = len(primary_tokens)
     agreement_rate = round((agreements / max(1, total_words)) * 100, 1)
     
     metrics = {
-        "secondary_engine": "Tesseract Script/Devanagari (PSM 3)",
+        "secondary_engine": "Secondary Tesseract Pass (Script/Devanagari, PSM 3)",
         "total_tokens_evaluated": total_words,
         "agreements": agreements,
         "disagreements": disagreements,
@@ -133,3 +142,4 @@ def run_cross_verification(image_path: str, primary_tokens: List[Dict[str, Any]]
     }
     
     return aligned_tokens, metrics
+

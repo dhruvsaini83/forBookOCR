@@ -8,7 +8,7 @@
 
 **वाणीसंशोधक (VaniScript)** is a professional, production-grade Hindi OCR and digital text preservation platform purpose-built for digitizing old Hindi religious books (*धार्मिक पुस्तकें*), bhajan collections (*भजन संग्रह*), historic manuscripts (*पाण्डुलिपियाँ*), faded lithographs, and rare literature.
 
-Unlike typical OCR tools that merely perform single-pass recognition and claim 100% correctness, वाणीसंशोधक implements an **authenticity-preserving 4-Stage OCR Verification Pipeline** with Devanagari Unicode linguistic validation, character-level image traceability, and a transparent consistency audit trail.
+Unlike typical OCR tools that merely perform single-pass recognition and claim 100% correctness, वाणीसंशोधक implements a transparent **5-Stage Verification Pipeline** with dual-model Tesseract cross-comparison, Devanagari Unicode linguistic validation, character-level image traceability, and an append-only SQLite trigger audit log.
 
 ---
 
@@ -18,12 +18,12 @@ Unlike typical OCR tools that merely perform single-pass recognition and claim 1
 - **Why Web + PWA is Optimal:**
   1. **Mobile Manuscript Photography:** Scholars, priests, and volunteers can take high-resolution photos of rare granths directly using their phone cameras via the PWA camera interface (`<input type="file" accept="image/*" capture="environment">`).
   2. **Heavy OCR Compute Offloading:** Neural OCR (LSTM/CNN), image deskewing, and Unicode rule checking run on the backend without draining phone batteries or choking mobile WebAssembly memory.
-  3. **Multi-Page PDF Processing:** Background workers effortlessly process 100+ page scanned books asynchronously while the user continues viewing already extracted pages.
-  4. **Persistent History & Search:** Central SQLite/PostgreSQL storage enables full-text Devanagari search across all scanned pages and cross-device access.
+  3. **Multi-Page PDF Processing:** Background workers effortlessly process multi-page scanned books page by page while tracking page-level status (`QUEUED`, `PROCESSING`, `COMPLETED`, `NEEDS_REVIEW`, `FAILED`, `RETRYING`).
+  4. **Persistent History & Search:** Central SQLite storage enables Devanagari search across all scanned pages and cross-device access.
   5. **Offline PWA Capability:** Service workers cache the web UI, Google Devanagari fonts, and previously inspected jobs so verified texts remain accessible offline.
 
 - **When Native Desktop/Mobile Offers an Advantage:**
-  - When field researchers work in remote Himalayan ashrams or rural archives with **zero internet connectivity** and require completely offline on-device GPU inference.
+  - When field researchers work in remote archives with **zero internet connectivity** and require completely offline on-device execution.
 
 ---
 
@@ -31,7 +31,7 @@ Unlike typical OCR tools that merely perform single-pass recognition and claim 1
 
 | Evaluation Criteria | Tesseract 5.4 LSTM (`hin+Devanagari+san`) | PaddleOCR / RapidOCR Indic | Vision-Language Models (Gemini / Indic-LLM) | वाणीसंशोधक Multi-Stage Approach |
 | :--- | :--- | :--- | :--- | :--- |
-| **Historical & Archaic Devanagari** | Excellent when combined with `Devanagari` and `san` models; preserves archaic ligatures and viramas. | Good for modern printed Hindi; struggles with rare Vedic conjuncts. | Strong contextual recognition, but **high risk of hallucination** and silent modernizing. | **Dual-Engine Consensus:** Tesseract LSTM + dedicated Devanagari script model + visual alignment. |
+| **Historical & Archaic Devanagari** | Excellent when combined with `Devanagari` and `san` models; preserves archaic ligatures and viramas. | Good for modern printed Hindi; struggles with rare Vedic conjuncts. | Strong contextual recognition, but **high risk of hallucination** and silent modernizing. | **Dual-Pass Comparison:** Tesseract Primary (`hin+Devanagari+san`, PSM 6) vs Secondary Script/Devanagari pass (PSM 3). |
 | **Low-Quality / Faded Prints** | Sensitive to yellowed paper, bleed-through, and skew without preprocessing. | Resilient to minor text curvature and broken baselines. | High visual tolerance, but unpredictable on faint vowel marks. | **Stage 1 CLAHE + Matra-Preserving Binarization:** Recovers faint strokes before recognition. |
 | **Bounding Box Traceability** | Precise character and word-level coordinates `(x, y, w, h)` via TSV/hOCR. | Bounding polygon extraction via DBNet. | Typically lacks word bounding boxes or requires expensive coordinate prompting. | **Pixel-Perfect Alignment:** Every word is mapped to its exact source image patch. |
 | **Silent Modernizing Risk** | **Zero.** Extracts only what is printed; does not rewrite Awadhi/Braj. | Very low. Strictly character sequence classification. | **Critical Risk:** Frequently rewrites historical spelling (e.g. changes `सुधारि` to `सुधारकर`). | **Strict Rule:** Linguistic layer preserves historical orthography without rewriting. |
@@ -39,55 +39,54 @@ Unlike typical OCR tools that merely perform single-pass recognition and claim 1
 
 ---
 
-## 3. Four-Stage Verification Pipeline Architecture
+## 3. Five-Stage Verification Pipeline Architecture
 
 ```
-[ Uploaded Scan / PDF / Photo ]
-              │
-              ▼
-┌────────────────────────────────────────────────────────┐
-│ STAGE 1: Image Preprocessing & Quality Analysis        │
-│ • Devanagari Shirorekha-tuned Skew Detection & Deskew  │
-│ • Luminance CLAHE Contrast Restoration                 │
-│ • Matra-Preserving Adaptive Binarization (Block 25)    │
-│ • Laplacian Blur & Contrast Quality Scoring            │
-└──────────────────────────┬─────────────────────────────┘
-                           │
-                           ▼
-┌────────────────────────────────────────────────────────┐
-│ STAGE 2: Primary Hindi/Devanagari OCR Extraction       │
-│ • Engine: Tesseract 5.4 LSTM (hin + Devanagari + san)   │
-│ • Structured Word Tokens with (x, y, w, h) Bounding Box│
-│ • Paragraph & Poetic Line Hierarchy Preservation       │
-│ • Initial Confidence Stratification (High/Med/Low)     │
-└──────────────────────────┬─────────────────────────────┘
-                           │
-                           ▼
-┌────────────────────────────────────────────────────────┐
-│ STAGE 3: Independent OCR Cross-Verification            │
-│ • Engine: Dedicated Devanagari Script Recognition Pass │
-│ • Character-by-Character Global Sequence Alignment     │
-│ • Devanagari Confusion Detection (व/ब, घ/ध, ख/रव, थ/य) │
-│ • Matra Disagreement Identification (ि vs ी, ु vs ू)   │
-└──────────────────────────┬─────────────────────────────┘
-                           │
-                           ▼
-┌────────────────────────────────────────────────────────┐
-│ STAGE 4: Devanagari Linguistic & Unicode Validation    │
-│ • Unicode Anomaly Detection (consecutive matras, etc.) │
-│ • Archaic & Religious Vocabulary Integrity             │
-│ • Non-Destructive Advisory Suggestions                 │
-│ • Strict Rule: NEVER Modernize Historical Spellings!   │
-└──────────────────────────┬─────────────────────────────┘
-                           │
-                           ▼
-┌────────────────────────────────────────────────────────┐
-│ STAGE 5: Structural Consistency Audit & Quality Report │
-│ • Verse Boundary & Chaupai Metre Symmetry Audit        │
-│ • Magnified Source Cutout Image Attachment             │
-│ • Immutable Change Log & Human Review Interface        │
-│ • Honest Accuracy Statement (No False 100% Claims)     │
-└────────────────────────────────────────────────────────┘
+[ Uploaded Scan / PDF / Photo (Validated Magic Bytes, Size <= 50MB, Pixel Limit) ]
+                                      │
+                                      ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ STAGE 1: Image Preprocessing & Quality Analysis                        │
+│ • Devanagari Shirorekha-tuned Skew Detection & Deskew                  │
+│ • Luminance CLAHE Contrast Restoration                                 │
+│ • Matra-Preserving Adaptive Binarization (Block 25)                    │
+│ • Laplacian Blur & Contrast Quality Scoring                            │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ STAGE 2: Primary Hindi/Devanagari OCR Extraction                       │
+│ • Engine: Tesseract 5.4 LSTM (hin + Devanagari + san, PSM 6)           │
+│ • Subprocess Timeout Guard (30s)                                       │
+│ • Structured Word Tokens with (x, y, w, h) Bounding Box                │
+│ • Pristine `original_ocr_text` Stored Unaltered                        │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ STAGE 3: Secondary Tesseract OCR Pass (Cross-Model Comparison)         │
+│ • Secondary Pass: Dedicated Devanagari Script Model (PSM 3)            │
+│ • Character-by-Character Sequence Alignment & Opcode Matching          │
+│ • Glyph Confusion Detection (व/ब, घ/ध, ख/रव, थ/य)                      │
+│ • Matra Disagreement Identification (ि vs ी, ु vs ू)                   │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ STAGE 4: Devanagari Linguistic & Unicode Validation                    │
+│ • Unicode Anomaly Detection (consecutive matras, orphan halant, latin) │
+│ • Classical Awadhi / Braj / Sanskritized Lexicon Verification          │
+│ • Strict Rule: NEVER Modernize Historical Spellings (बरनउँ, मुकुरु)   │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ STAGE 5: Consistency Checking & Visual Crop Generation                 │
+│ • Verse Boundary & Chaupai Metre Symmetry Audit                        │
+│ • Base64 High-Resolution Magnified Source Cutouts Attached to Tokens   │
+│ • Separation of Original, Reviewed, and Confirmed Text                 │
+│ • Append-Only SQLite Trigger Audit Trail (UPDATE/DELETE Aborted)       │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -158,9 +157,13 @@ The application will launch, automatically serve both the backend API and the co
 
 ## 7. Automated Test Suite
 
-Run the comprehensive integration test suite verifying all 5 verification stages, word-level updates, audit trails, and benchmark evaluations:
+Run the full automated test suite verifying magic byte security, SQLite triggers, Unicode rules, text separation, and API endpoints:
 
 ```bash
+# Run complete pytest suite (12 tests)
+python -m pytest backend/tests -v
+
+# Or run standalone API integration test script
 python backend/tests/test_api_endpoints.py
 ```
 
@@ -208,3 +211,4 @@ Expected output:
 1. **No Model Training on Private Religious Texts:** Uploaded manuscripts, sacred mantras, and personal collections are never transmitted to third parties or used for external model training.
 2. **Local Retention Control:** Users have full control over document retention; deletion permanently removes all original images, preprocessed variants, and database records from disk.
 3. **Scholar Traceability:** All automated suggestions remain advisory until approved by a human scholar, preserving the sanctity and exact orthography of ancient texts.
+

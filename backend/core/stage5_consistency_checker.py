@@ -58,12 +58,20 @@ def run_consistency_check(
             lines_dict[line_num] = []
         lines_dict[line_num].append(tok)
         
+        # Ensure token separation fields exist
+        tok.setdefault("original_text", tok.get("text", ""))
+        tok.setdefault("edited_text", None)
+        tok.setdefault("confirmed_text", None)
+        tok.setdefault("correction_status", "ORIGINAL")
+        
         # Check if token needs visual crop attached (low confidence, disagreement, or anomaly)
         is_flagged = (
             tok.get("confidence", 100) < 65.0
             or bool(tok.get("disagreement_type"))
             or bool(tok.get("unicode_anomalies"))
             or "SUGGESTION_AVAILABLE" in tok.get("flags", [])
+            or "DISAGREEMENT" in tok.get("flags", [])
+            or "UNICODE_WARNING" in tok.get("flags", [])
         )
         
         if is_flagged:
@@ -153,9 +161,9 @@ def run_consistency_check(
                 "avg_confidence": f"{stage2_metrics.get('average_confidence', 0)}%"
             },
             "stage3_cross_verification": {
-                "name": "स्वतंत्र दोहरा सत्यापन (Independent Cross-Verification)",
+                "name": "द्वितीयक टेसरेक्ट पास - मॉडल व विन्यास तुलना (Secondary Tesseract OCR Pass - Model Comparison)",
                 "status": "Completed",
-                "engine": stage3_metrics.get("secondary_engine", "Tesseract Script/Devanagari"),
+                "engine": stage3_metrics.get("secondary_engine", "Secondary Tesseract Pass (Script/Devanagari, PSM 3)"),
                 "agreement_rate": f"{stage3_metrics.get('agreement_rate_pct', 0)}%",
                 "disagreements": stage3_metrics.get("disagreements", 0)
             },
@@ -169,3 +177,4 @@ def run_consistency_check(
     }
 
     return enriched_tokens, qa_report, final_verified_text
+

@@ -2,6 +2,8 @@ import os
 import sys
 import uuid
 import shutil
+import re
+import hashlib
 from pathlib import Path
 from typing import Optional, List
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Query, BackgroundTasks
@@ -9,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 import pymupdf as fitz
+from PIL import Image
 from pydantic import BaseModel
 
 # Ensure backend path is in sys.path
@@ -17,7 +20,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from core.config import (
     UPLOADS_DIR, PROCESSED_DIR, EXPORTS_DIR, DATA_DIR,
     ALLOWED_EXTENSIONS, ALLOWED_IMAGE_EXTENSIONS, ALLOWED_PDF_EXTENSIONS,
-    MAX_FILE_SIZE_BYTES, TESSERACT_CMD
+    MAX_FILE_SIZE_BYTES, MAX_IMAGE_DIMENSION, MAX_IMAGE_PIXELS, MAX_PDF_PAGES,
+    TESSERACT_TIMEOUT_SECONDS, MAGIC_SIGNATURES, TESSERACT_CMD,
+    DOC_STATUS_OCR_COMPLETE, DOC_STATUS_NEEDS_REVIEW, DOC_STATUS_FAILED
 )
 import core.database as db
 from core.stage1_preprocessing import preprocess_image_pipeline
@@ -31,8 +36,8 @@ from samples.sample_data import generate_samples
 
 app = FastAPI(
     title="वाणीसंशोधक API (VaniScript Heritage OCR)",
-    description="Devanagari Heritage Text Preservation & 4-Stage OCR Verification Platform",
-    version="2.0.0"
+    description="Devanagari Heritage Text Preservation & 5-Stage Verification Platform",
+    version="2.1.0"
 )
 
 # CORS configuration for frontend
@@ -56,71 +61,135 @@ class WordUpdateRequest(BaseModel):
 class PageTextUpdateRequest(BaseModel):
     verified_text: str
     mark_confirmed: Optional[bool] = False
+    text_version: Optional[str] = "reviewed"
 
 class DocumentUpdateRequest(BaseModel):
     title: Optional[str] = None
     collection_name: Optional[str] = None
 
-def process_single_page_pipeline(doc_id: str, page_number: int, image_path: str):
-    """Executes the full 5-stage verification pipeline for a single page."""
-    page_id = f"{doc_id}_p{page_number}"
-    
-    # Stage 1: Preprocessing & Quality Analysis
-    enhanced_path, binarized_path, quality_metrics = preprocess_image_pipeline(image_path, PROCESSED_DIR)
-    
-    # Stage 2: Primary Hindi/Devanagari OCR
-    stage2_res = run_primary_ocr(enhanced_path, lang="hin+Devanagari+san")
-    
-    # Stage 3: Independent Cross-Verification
-    stage3_tokens, stage3_metrics = run_cross_verification(enhanced_path, stage2_res["word_tokens"])
-    
-    # Stage 4: Devanagari Linguistic & Unicode Validation
-    stage4_tokens, stage4_metrics = run_linguistic_verification(stage3_tokens)
-    
-    # Stage 5: Consistency Audit & Quality Assurance
-    final_tokens, qa_report, final_verified_text = run_consistency_check(
-        stage4_tokens,
-        enhanced_path,
-        quality_metrics,
-        stage2_res["metrics"],
-        stage3_metrics,
-        stage4_metrics
-    )
-    
-    stage_metrics = {
-        "stage1": quality_metrics,
-        "stage2": stage2_res["metrics"],
-        "stage3": stage3_metrics,
-        "stage4": stage4_metrics,
-        "stage5": qa_report
-    }
-    
-    # Convert absolute paths to relative storage URLs for frontend rendering
-    def to_rel_url(p: str) -> str:
-        try:
-            rel = Path(p).relative_to(DATA_DIR)
-            return f"/storage/{str(rel).replace(os.sep, '/')}"
-        except Exception:
-            return p
+# Validation and Sanitization Helpers
+def validate_file_magic(header: bytes, ext: str) -> bool:
+    """Validates actual magic bytes against declared extension."""
+    clean_ext = ext.lstrip(".").lower()
+    if clean_ext in ("jpg", "jpeg"):
+        return header.startswith(MAGIC_SIGNATURES["jpg"])
+    elif clean_ext == "png":
+        return header.startswith(MAGIC_SIGNATURES["png"])
+    elif clean_ext == "webp":
+        return header.startswith(b"RIFF") and len(header) >= 12 and header[8:12] == b"WEBP"
+    elif clean_ext == "pdf":
+        return header.startswith(MAGIC_SIGNATURES["pdf"])
+    return False
 
-    orig_url = to_rel_url(image_path)
-    enh_url = to_rel_url(enhanced_path)
+def sanitize_filename(filename: str) -> str:
+    """Strips path traversal elements (../, \\) and limits characters safely."""
+    base_name = Path(filename).name
+    safe_name = re.sub(r'[^a-zA-Z0-9_.-]', '_', base_name)
+    return safe_name if safe_name else f"doc_{uuid.uuid4().hex[:8]}"
+
+def to_safe_rel_url(p: str) -> str:
+    """Converts filesystem path to a safe public relative storage URL without leaking OS paths."""
+    try:
+        rel = Path(p).relative_to(DATA_DIR)
+        return f"/storage/{str(rel).replace(os.sep, '/')}"
+    except Exception:
+        return f"/storage/processed/{Path(p).name}"
+
+def process_single_page_pipeline(doc_id: str, page_number: int, image_path: str) -> str:
+    """Executes the full 5-stage verification pipeline for a single page with error containment."""
+    page_id = f"{doc_id}_p{page_number}"
+    db.update_page_status(doc_id, page_number, "PROCESSING")
     
-    db.save_page_result(
-        page_id=page_id,
-        doc_id=doc_id,
-        page_number=page_number,
-        original_img=orig_url,
-        preprocessed_img=enh_url,
-        quality_metrics=quality_metrics,
-        raw_text=stage2_res["full_text"],
-        verified_text=final_verified_text,
-        word_tokens=final_tokens,
-        stage_metrics=stage_metrics,
-        status="completed"
-    )
-    
-    return qa_report["overall_status"]
+    try:
+        # Stage 1: Preprocessing & Quality Analysis
+        enhanced_path, binarized_path, quality_metrics = preprocess_image_pipeline(image_path, PROCESSED_DIR)
+        
+        # Stage 2: Primary Hindi/Devanagari OCR (with timeout guard)
+        stage2_res = run_primary_ocr(enhanced_path, lang="hin+Devanagari+san", timeout=TESSERACT_TIMEOUT_SECONDS)
+        
+        # Stage 3: Secondary Tesseract OCR Pass (Cross-Model/Configuration Comparison)
+        stage3_tokens, stage3_metrics = run_cross_verification(enhanced_path, stage2_res["word_tokens"], timeout=TESSERACT_TIMEOUT_SECONDS)
+        
+        # Stage 4: Devanagari Linguistic & Unicode Validation
+        stage4_tokens, stage4_metrics = run_linguistic_verification(stage3_tokens)
+        
+        # Stage 5: Consistency Audit & Quality Assurance
+        final_tokens, qa_report, final_verified_text = run_consistency_check(
+            stage4_tokens,
+            enhanced_path,
+            quality_metrics,
+            stage2_res["metrics"],
+            stage3_metrics,
+            stage4_metrics
+        )
+        
+        stage_metrics = {
+            "stage1": quality_metrics,
+            "stage2": stage2_res["metrics"],
+            "stage3": stage3_metrics,
+            "stage4": stage4_metrics,
+            "stage5": qa_report
+        }
+        
+        orig_url = to_safe_rel_url(image_path)
+        enh_url = to_safe_rel_url(enhanced_path)
+        
+        page_status = "COMPLETED" if qa_report["overall_status"] == "Verified by Available Checks" else "NEEDS_REVIEW"
+        
+        db.save_page_result(
+            page_id=page_id,
+            doc_id=doc_id,
+            page_number=page_number,
+            original_img=orig_url,
+            preprocessed_img=enh_url,
+            quality_metrics=quality_metrics,
+            raw_text=stage2_res["full_text"],
+            original_ocr_text=stage2_res["full_text"],
+            verified_text=final_verified_text,
+            reviewed_text=final_verified_text,
+            word_tokens=final_tokens,
+            stage_metrics=stage_metrics,
+            status=page_status
+        )
+        return qa_report["overall_status"]
+    except TimeoutError as te:
+        db.save_page_result(
+            page_id=page_id,
+            doc_id=doc_id,
+            page_number=page_number,
+            original_img=to_safe_rel_url(image_path),
+            preprocessed_img="",
+            quality_metrics={},
+            raw_text="",
+            original_ocr_text="",
+            verified_text="",
+            reviewed_text="",
+            word_tokens=[],
+            stage_metrics={},
+            status="FAILED",
+            error_code="OCR_TIMEOUT",
+            error_message=str(te)
+        )
+        return "FAILED"
+    except Exception as ex:
+        db.save_page_result(
+            page_id=page_id,
+            doc_id=doc_id,
+            page_number=page_number,
+            original_img=to_safe_rel_url(image_path),
+            preprocessed_img="",
+            quality_metrics={},
+            raw_text="",
+            original_ocr_text="",
+            verified_text="",
+            reviewed_text="",
+            word_tokens=[],
+            stage_metrics={},
+            status="FAILED",
+            error_code="PROCESSING_ERROR",
+            error_message=f"Processing error: {type(ex).__name__}"
+        )
+        return "FAILED"
 
 # --- API Endpoints ---
 
@@ -129,13 +198,13 @@ def health_check():
     return {
         "status": "healthy",
         "service": "वाणीसंशोधक (VaniScript Heritage OCR)",
-        "version": "2.0.0",
-        "tesseract_cmd": TESSERACT_CMD,
+        "version": "2.1.0",
+        "tesseract_cmd": Path(TESSERACT_CMD).name if TESSERACT_CMD else "tesseract",
         "supported_scripts": ["Devanagari", "Hindi", "Sanskrit"],
         "stages_active": [
-            "Stage 1: Image Preprocessing (Deskew, CLAHE, Matra-Preserving Binarization)",
+            "Stage 1: Preprocessing (Deskew, CLAHE, Matra-Preserving Binarization)",
             "Stage 2: Primary OCR (Tesseract LSTM hin+Devanagari+san)",
-            "Stage 3: Independent Cross-Verification (Secondary Devanagari Pass & Alignment)",
+            "Stage 3: Secondary Tesseract OCR Pass (Cross-Model/Configuration Comparison)",
             "Stage 4: Hindi Linguistic & Unicode Rule Engine (Historical Orthography Preservation)",
             "Stage 5: Consistency Check & Visual Word Crop Auditing"
         ]
@@ -150,75 +219,148 @@ async def upload_document(
     auto_process: bool = Form(True)
 ):
     """
-    Handles single image (JPG, PNG, WEBP) or multi-page PDF upload.
-    Validates file formats and extracts PDF pages into high-resolution images.
+    Secure document upload with magic byte inspection, filename sanitization,
+    size limiting (50MB), dimension/page-count validation, and error containment.
     """
-    ext = Path(file.filename).suffix.lower()
+    raw_filename = file.filename or "uploaded_file"
+    ext = Path(raw_filename).suffix.lower()
+    
     if ext not in ALLOWED_EXTENSIONS:
-        raise HTTPException(status_code=400, detail=f"Unsupported format '{ext}'. Allowed: JPG, PNG, WEBP, PDF.")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file format '{ext}'. Allowed: JPG, PNG, WEBP, PDF."
+        )
         
+    safe_name = sanitize_filename(raw_filename)
     doc_id = str(uuid.uuid4())
-    doc_title = title.strip() if title and title.strip() else Path(file.filename).stem
+    doc_title = title.strip() if title and title.strip() else Path(safe_name).stem
     
     doc_upload_dir = UPLOADS_DIR / doc_id
     doc_upload_dir.mkdir(parents=True, exist_ok=True)
     
-    temp_file_path = doc_upload_dir / file.filename
-    with open(temp_file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+    source_file_path = doc_upload_dir / f"source_{safe_name}"
+    
+    # Stream file to disk while validating size and computing sha256
+    hasher = hashlib.sha256()
+    bytes_read = 0
+    header_bytes = b""
+    
+    try:
+        with open(source_file_path, "wb") as buffer:
+            while True:
+                chunk = await file.read(65536)
+                if not chunk:
+                    break
+                bytes_read += len(chunk)
+                if bytes_read > MAX_FILE_SIZE_BYTES:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"File exceeds maximum allowed size of 50 MB."
+                    )
+                if len(header_bytes) < 512:
+                    header_bytes += chunk[:512 - len(header_bytes)]
+                hasher.update(chunk)
+                buffer.write(chunk)
+    except HTTPException:
+        shutil.rmtree(doc_upload_dir, ignore_errors=True)
+        raise
+    except Exception as e:
+        shutil.rmtree(doc_upload_dir, ignore_errors=True)
+        raise HTTPException(status_code=400, detail="Failed to read and save uploaded file.")
         
+    # Magic bytes content validation
+    if not validate_file_magic(header_bytes, ext):
+        shutil.rmtree(doc_upload_dir, ignore_errors=True)
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid file content: Signature does not match declared format '{ext}'."
+        )
+        
+    file_sha256 = hasher.hexdigest()
     page_paths = []
     
     if ext in ALLOWED_PDF_EXTENSIONS:
-        # Multi-page PDF extraction using PyMuPDF (fitz) at 300 DPI
         try:
-            pdf_doc = fitz.open(str(temp_file_path))
+            pdf_doc = fitz.open(str(source_file_path))
             total_pages = len(pdf_doc)
             if total_pages == 0:
-                raise HTTPException(status_code=400, detail="The PDF file has no pages.")
+                pdf_doc.close()
+                shutil.rmtree(doc_upload_dir, ignore_errors=True)
+                raise HTTPException(status_code=400, detail="The PDF file contains no pages.")
+            if total_pages > MAX_PDF_PAGES:
+                pdf_doc.close()
+                shutil.rmtree(doc_upload_dir, ignore_errors=True)
+                raise HTTPException(status_code=400, detail=f"PDF page count ({total_pages}) exceeds limit of {MAX_PDF_PAGES} pages.")
                 
             for page_idx in range(total_pages):
                 page = pdf_doc[page_idx]
-                # Matrix for high-resolution 300 DPI rendering (standard 72 * 4.16 = 300)
-                mat = fitz.Matrix(2.5, 2.5)
+                mat = fitz.Matrix(2.5, 2.5)  # Render ~300 DPI
                 pix = page.get_pixmap(matrix=mat)
                 page_img_path = doc_upload_dir / f"page_{page_idx + 1}.png"
                 pix.save(str(page_img_path))
                 page_paths.append(str(page_img_path))
             pdf_doc.close()
             file_type = "pdf"
+        except HTTPException:
+            raise
         except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Failed to process PDF: {str(e)}")
+            shutil.rmtree(doc_upload_dir, ignore_errors=True)
+            raise HTTPException(status_code=400, detail="Failed to decode or parse PDF document.")
     else:
-        # Single image upload
+        # Single image upload: validate dimensions and pixels
+        try:
+            with Image.open(source_file_path) as img:
+                w, h = img.size
+                if w > MAX_IMAGE_DIMENSION or h > MAX_IMAGE_DIMENSION or (w * h) > MAX_IMAGE_PIXELS:
+                    shutil.rmtree(doc_upload_dir, ignore_errors=True)
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Image dimensions ({w}x{h}) exceed maximum allowed {MAX_IMAGE_DIMENSION}x{MAX_IMAGE_DIMENSION} px."
+                    )
+        except HTTPException:
+            raise
+        except Exception:
+            shutil.rmtree(doc_upload_dir, ignore_errors=True)
+            raise HTTPException(status_code=400, detail="Uploaded file is not a valid or readable image.")
+            
         page_img_path = doc_upload_dir / f"page_1{ext}"
-        shutil.copyfile(temp_file_path, page_img_path)
+        shutil.copyfile(source_file_path, page_img_path)
         page_paths.append(str(page_img_path))
         total_pages = 1
         file_type = "image"
         
+    provenance = {
+        "sha256_hash": file_sha256,
+        "file_size_bytes": bytes_read,
+        "ocr_engine": "Tesseract OCR",
+        "engine_version": "5.4.0",
+        "language_config": "hin+Devanagari+san",
+        "psm_mode": 6,
+        "uploaded_at": str(doc_id)
+    }
+    
     # Save document record in DB
-    doc_record = db.save_document(
+    db.save_document(
         doc_id=doc_id,
         title=doc_title,
-        original_filename=file.filename,
+        original_filename=safe_name,
         file_type=file_type,
         total_pages=total_pages,
-        collection_name=collection_name
+        collection_name=collection_name,
+        provenance=provenance
     )
     
     if auto_process:
-        # For small docs (1-3 pages), process page 1 immediately for instant UI feedback
-        # Remaining pages are processed in background
+        # Process page 1 immediately for snappy feedback
         status_result = process_single_page_pipeline(doc_id, 1, page_paths[0])
-        db.update_document_status(doc_id, "completed", verification_status=status_result, processed_pages=1)
+        db.update_document_status(doc_id, DOC_STATUS_OCR_COMPLETE, verification_status=status_result, processed_pages=1)
         
-        # If multi-page, process remaining pages in background
+        # Multi-page background runner
         if total_pages > 1:
             def process_remaining():
                 for p_num in range(2, total_pages + 1):
                     process_single_page_pipeline(doc_id, p_num, page_paths[p_num - 1])
-                    db.update_document_status(doc_id, "completed", processed_pages=p_num)
+                    db.update_document_status(doc_id, DOC_STATUS_OCR_COMPLETE, processed_pages=p_num)
             background_tasks.add_task(process_remaining)
             
     return {
@@ -227,7 +369,7 @@ async def upload_document(
         "title": doc_title,
         "file_type": file_type,
         "total_pages": total_pages,
-        "status": "completed" if auto_process else "pending"
+        "status": DOC_STATUS_OCR_COMPLETE if auto_process else "pending"
     }
 
 @app.post("/api/process/{doc_id}")
@@ -245,14 +387,61 @@ def process_document(doc_id: str, page_number: Optional[int] = Query(None)):
     
     last_status = "Needs Review"
     for p_num in pages_to_process:
-        # Find page file
         candidates = list(doc_upload_dir.glob(f"page_{p_num}.*"))
         if not candidates:
             continue
         last_status = process_single_page_pipeline(doc_id, p_num, str(candidates[0]))
         
-    db.update_document_status(doc_id, "completed", verification_status=last_status, processed_pages=len(pages_to_process))
+    db.update_document_status(doc_id, DOC_STATUS_OCR_COMPLETE, verification_status=last_status, processed_pages=len(pages_to_process))
     return {"success": True, "document_id": doc_id, "status": last_status}
+
+@app.post("/api/documents/{doc_id}/pages/{page_number}/retry")
+def retry_page_processing(doc_id: str, page_number: int):
+    """Retries processing for a single failed or needs_review page."""
+    doc = db.get_document_by_id(doc_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found.")
+        
+    doc_upload_dir = UPLOADS_DIR / doc_id
+    candidates = list(doc_upload_dir.glob(f"page_{page_number}.*"))
+    if not candidates:
+        raise HTTPException(status_code=404, detail=f"Source image for page {page_number} not found.")
+        
+    # Increment retry count and mark RETRYING
+    db.update_page_status(doc_id, page_number, "RETRYING", increment_retry=True)
+    status_result = process_single_page_pipeline(doc_id, page_number, str(candidates[0]))
+    
+    return {
+        "success": True,
+        "document_id": doc_id,
+        "page_number": page_number,
+        "status": status_result
+    }
+
+@app.get("/api/documents/{doc_id}/pages/{page_number}/status")
+def get_page_status_endpoint(doc_id: str, page_number: int):
+    """Returns granular processing status, retry count, and errors for a specific page."""
+    status_info = db.get_page_status(doc_id, page_number)
+    if not status_info:
+        raise HTTPException(status_code=404, detail=f"Status for page {page_number} not found.")
+    return status_info
+
+@app.get("/api/documents/{doc_id}/unresolved")
+def get_document_unresolved(doc_id: str):
+    """Returns summary of all unresolved pages and flagged tokens for this document."""
+    doc = db.get_document_by_id(doc_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found.")
+    unresolved_pages = db.get_unresolved_pages(doc_id)
+    total_flagged = sum(p.get("flagged_tokens_count", 0) for p in unresolved_pages)
+    failed_count = sum(1 for p in unresolved_pages if p.get("status") in ("FAILED", "error"))
+    return {
+        "document_id": doc_id,
+        "total_unresolved_pages": len(unresolved_pages),
+        "total_flagged_tokens": total_flagged,
+        "failed_pages_count": failed_count,
+        "pages": unresolved_pages
+    }
 
 @app.get("/api/documents")
 def get_documents(
@@ -291,7 +480,8 @@ def get_page_details(doc_id: str, page_number: int):
 def update_word(doc_id: str, page_number: int, req: WordUpdateRequest):
     """
     Applies user correction to a single word token.
-    Updates verified text and appends an entry to the immutable audit log.
+    Updates verified text, sets token status to manually_confirmed,
+    and appends an entry to the append-only SQLite audit log.
     """
     page = db.get_page_by_number(doc_id, page_number)
     if not page:
@@ -301,15 +491,17 @@ def update_word(doc_id: str, page_number: int, req: WordUpdateRequest):
     if req.word_index < 0 or req.word_index >= len(tokens):
         raise HTTPException(status_code=400, detail="Invalid word index.")
         
-    orig_text = tokens[req.word_index]["text"]
+    orig_text = tokens[req.word_index].get("original_text") or tokens[req.word_index]["text"]
     tokens[req.word_index]["text"] = req.corrected_text
+    tokens[req.word_index]["edited_text"] = req.corrected_text
     tokens[req.word_index]["status"] = "manually_confirmed"
-    tokens[req.word_index]["flags"] = [f for f in tokens[req.word_index].get("flags", []) if f not in ("STAGE3_DISAGREEMENT", "UNICODE_ANOMALY")]
+    tokens[req.word_index]["correction_status"] = "EDITED"
+    tokens[req.word_index]["flags"] = [f for f in tokens[req.word_index].get("flags", []) if f not in ("STAGE3_DISAGREEMENT", "UNICODE_ANOMALY", "DISAGREEMENT", "UNICODE_WARNING")]
+    if "USER_CONFIRMED" not in tokens[req.word_index]["flags"]:
+        tokens[req.word_index]["flags"].append("USER_CONFIRMED")
     
-    # Reconstruct verified text
     new_verified_text = " ".join(t["text"] for t in tokens)
     
-    # Re-save page
     db.save_page_result(
         page_id=page["id"],
         doc_id=doc_id,
@@ -317,14 +509,17 @@ def update_word(doc_id: str, page_number: int, req: WordUpdateRequest):
         original_img=page["original_image_path"],
         preprocessed_img=page["preprocessed_image_path"],
         quality_metrics=page["quality_metrics"],
-        raw_text=page["raw_ocr_text"],
+        raw_text=page.get("raw_ocr_text", ""),
+        original_ocr_text=page.get("original_ocr_text", page.get("raw_ocr_text", "")),
         verified_text=new_verified_text,
+        reviewed_text=new_verified_text,
+        confirmed_text=page.get("confirmed_text", ""),
         word_tokens=tokens,
         stage_metrics=page["stage_metrics"],
-        status="completed"
+        status="COMPLETED"
     )
     
-    # Log correction in audit table
+    # Log correction in append-only audit table
     db.log_correction(
         doc_id=doc_id,
         page_number=page_number,
@@ -338,12 +533,14 @@ def update_word(doc_id: str, page_number: int, req: WordUpdateRequest):
 
 @app.put("/api/documents/{doc_id}/pages/{page_number}/text")
 def update_page_text(doc_id: str, page_number: int, req: PageTextUpdateRequest):
-    """Full manual text edit for a page."""
+    """Full manual text edit for a page, supporting reviewed and confirmed text separation."""
     page = db.get_page_by_number(doc_id, page_number)
     if not page:
         raise HTTPException(status_code=404, detail="Page not found.")
         
-    status = "Manually Confirmed" if req.mark_confirmed else page.get("status", "completed")
+    status = "COMPLETED" if req.mark_confirmed else page.get("status", "COMPLETED")
+    conf_text = req.verified_text if req.mark_confirmed else page.get("confirmed_text", "")
+    rev_text = req.verified_text
     
     db.save_page_result(
         page_id=page["id"],
@@ -352,21 +549,24 @@ def update_page_text(doc_id: str, page_number: int, req: PageTextUpdateRequest):
         original_img=page["original_image_path"],
         preprocessed_img=page["preprocessed_image_path"],
         quality_metrics=page["quality_metrics"],
-        raw_text=page["raw_ocr_text"],
-        verified_text=req.verified_text,
+        raw_text=page.get("raw_ocr_text", ""),
+        original_ocr_text=page.get("original_ocr_text", page.get("raw_ocr_text", "")),
+        verified_text=rev_text,
+        reviewed_text=rev_text,
+        confirmed_text=conf_text,
         word_tokens=page["word_tokens"],
         stage_metrics=page["stage_metrics"],
         status=status
     )
     
     if req.mark_confirmed:
-        db.update_document_status(doc_id, "completed", verification_status="Manually Confirmed")
+        db.update_document_status(doc_id, "COMPLETED", verification_status="Manually Confirmed")
         
-    return {"success": True, "verified_text": req.verified_text}
+    return {"success": True, "verified_text": req.verified_text, "confirmed": req.mark_confirmed}
 
 @app.delete("/api/documents/{doc_id}")
 def delete_document_endpoint(doc_id: str):
-    """Permanently deletes document, database records, and uploaded files."""
+    """Permanently deletes document and uploaded files while safely preserving immutable audit trails."""
     doc_upload_dir = UPLOADS_DIR / doc_id
     if doc_upload_dir.exists():
         shutil.rmtree(doc_upload_dir, ignore_errors=True)
@@ -374,30 +574,36 @@ def delete_document_endpoint(doc_id: str):
     return {"success": True, "message": "Document deleted permanently."}
 
 @app.get("/api/export/{doc_id}")
-def export_document(doc_id: str, format: str = Query("txt", pattern="^(txt|docx|json|html)$")):
-    """Downloads extracted text as TXT, Word (.docx), JSON, or printable HTML."""
+def export_document(
+    doc_id: str,
+    format: str = Query("txt", pattern="^(txt|docx|json|html)$"),
+    text_version: str = Query("reviewed", pattern="^(reviewed|confirmed|original_ocr)$")
+):
+    """Downloads extracted text as TXT, Word (.docx), JSON, or printable HTML with text source metadata."""
     doc = db.get_document_by_id(doc_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found.")
     pages = db.get_all_pages_for_document(doc_id)
     logs = db.get_correction_logs(doc_id)
     
+    safe_title = sanitize_filename(doc['title'])
+    
     if format == "txt":
-        file_path = export_as_txt(doc, pages)
+        file_path = export_as_txt(doc, pages, text_version=text_version)
         media_type = "text/plain; charset=utf-8"
-        filename = f"{doc['title']}_verified.txt"
+        filename = f"{safe_title}_{text_version}.txt"
     elif format == "docx":
-        file_path = export_as_docx(doc, pages)
+        file_path = export_as_docx(doc, pages, text_version=text_version)
         media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        filename = f"{doc['title']}_verified.docx"
+        filename = f"{safe_title}_{text_version}.docx"
     elif format == "json":
-        file_path = export_as_json(doc, pages, logs)
+        file_path = export_as_json(doc, pages, logs, text_version=text_version)
         media_type = "application/json; charset=utf-8"
-        filename = f"{doc['title']}_structured.json"
-    else: # html
-        file_path = export_as_html_printable(doc, pages)
+        filename = f"{safe_title}_{text_version}_structured.json"
+    else:  # html
+        file_path = export_as_html_printable(doc, pages, text_version=text_version)
         media_type = "text/html; charset=utf-8"
-        filename = f"{doc['title']}_printable.html"
+        filename = f"{safe_title}_{text_version}_printable.html"
         
     return FileResponse(
         path=file_path,
@@ -432,11 +638,12 @@ def load_sample_to_workspace(sample_id: str):
         original_filename=match["filename"],
         file_type="image",
         total_pages=1,
-        collection_name=match["collection"]
+        collection_name=match["collection"],
+        provenance={"sample_source": match["id"], "ocr_engine": "Tesseract OCR"}
     )
     
     status = process_single_page_pipeline(doc_id, 1, str(target_img_path))
-    db.update_document_status(doc_id, "completed", verification_status=status, processed_pages=1)
+    db.update_document_status(doc_id, "COMPLETED", verification_status=status, processed_pages=1)
     
     return {
         "success": True,
@@ -447,7 +654,7 @@ def load_sample_to_workspace(sample_id: str):
 
 @app.get("/api/benchmark")
 def get_benchmarks():
-    """Returns historical Hindi benchmark cases with CER/WER metrics."""
+    """Returns authentic historical Hindi benchmark cases with CER/WER metrics."""
     return {"benchmarks": BENCHMARK_CASES}
 
 @app.post("/api/benchmark/evaluate")
@@ -456,7 +663,7 @@ def evaluate_benchmark(case_id: str = Form(...), extracted_text: str = Form(...)
     case = next((c for c in BENCHMARK_CASES if c["id"] == case_id), None)
     if not case:
         raise HTTPException(status_code=404, detail="Benchmark case not found.")
-    eval_result = run_benchmark_evaluation(extracted_text, case["ground_truth"])
+    eval_result = run_benchmark_evaluation(extracted_text, case.get("ground_truth", ""))
     return {
         "case_id": case_id,
         "title": case["title"],
@@ -470,7 +677,6 @@ if FRONTEND_DIST.exists():
 
     @app.get("/{full_path:path}")
     def serve_frontend_spa(full_path: str):
-        # Do not catch /api or /storage
         if full_path.startswith("api/") or full_path.startswith("storage/"):
             raise HTTPException(status_code=404, detail="Not found")
         file_path = FRONTEND_DIST / full_path

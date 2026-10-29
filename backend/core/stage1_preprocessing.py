@@ -145,3 +145,4 @@ def preprocess_image_pipeline(input_image_path: str, output_dir: Path) -> Tuple[
     cv2.imwrite(str(binarized_path), binarized)
     
     return str(enhanced_path), str(binarized_path), metrics
+

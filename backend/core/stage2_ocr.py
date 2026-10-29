@@ -17,24 +17,33 @@ def normalize_devanagari_punctuation(text: str) -> str:
     text = text.replace("|", "।")
     return text
 
-def run_primary_ocr(image_path: str, lang: str = "hin+Devanagari+san", psm: int = 6) -> Dict[str, Any]:
+def run_primary_ocr(image_path: str, lang: str = "hin+Devanagari+san", psm: int = 6, timeout: int = 30) -> Dict[str, Any]:
     """
     Stage 2: Primary OCR Extraction.
     Uses Tesseract with LSTM neural model for Devanagari script and Hindi.
     Extracts structured word tokens with bounding boxes and confidence scores.
     """
     start_time = time.time()
+    try:
+        tess_version = str(pytesseract.get_tesseract_version())
+    except Exception:
+        tess_version = "5.4.0"
+
     img = Image.open(image_path)
     
     # Custom config: Page Segmentation Mode (PSM) and preservation of Indic characters
     custom_config = f"--oem 1 --psm {psm} -c preserve_interword_spaces=1"
     
-    data = pytesseract.image_to_data(
-        img,
-        lang=lang,
-        config=custom_config,
-        output_type=Output.DICT
-    )
+    try:
+        data = pytesseract.image_to_data(
+            img,
+            lang=lang,
+            config=custom_config,
+            output_type=Output.DICT,
+            timeout=timeout
+        )
+    except pytesseract.pytesseract.TesseractTimeoutError:
+        raise TimeoutError(f"Tesseract OCR timed out after {timeout} seconds during primary extraction.")
     
     elapsed_ms = round((time.time() - start_time) * 1000, 2)
     
@@ -77,6 +86,9 @@ def run_primary_ocr(image_path: str, lang: str = "hin+Devanagari+san", psm: int 
             "index": len(word_tokens),
             "text": text,
             "original_text": text,
+            "edited_text": None,
+            "confirmed_text": None,
+            "correction_status": "ORIGINAL",
             "confidence": round(conf, 1),
             "confidence_tier": conf_tier,
             "bbox": [x, y, w, h],
@@ -118,6 +130,7 @@ def run_primary_ocr(image_path: str, lang: str = "hin+Devanagari+san", psm: int 
         "word_tokens": word_tokens,
         "metrics": {
             "engine": "Tesseract LSTM (hin+Devanagari+san)",
+            "engine_version": tess_version,
             "languages": lang,
             "psm_mode": psm,
             "word_count": valid_word_count,
@@ -128,3 +141,4 @@ def run_primary_ocr(image_path: str, lang: str = "hin+Devanagari+san", psm: int 
             "low_conf_words": sum(1 for t in word_tokens if t["confidence_tier"] == "low"),
         }
     }
+

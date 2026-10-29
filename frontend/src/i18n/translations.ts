@@ -4,7 +4,7 @@ export const translations = {
   hi: {
     appTitle: "वाणीसंशोधक",
     appSubtitle: "देवनागरी पाण्डुलिपि एवं दुर्लभ धार्मिक ग्रन्थ OCR संरक्षण प्रणाली",
-    tagline: "४-चरणीय स्वतंत्र सत्यापन द्वारा सटीक, संपादन योग्य एवं प्रतिलिपि योग्य डिजिटल पाठ",
+    tagline: "५-चरणीय पारदर्शी सत्यापन (द्वि-मॉडल टेसरेक्ट तुलना व यूनिकोड नियम) द्वारा प्रामाणिक डिजिटल पाठ",
     
     // Header
     navUpload: "नया दस्तावेज़ अपलोड करें",
@@ -38,9 +38,14 @@ export const translations = {
     sampleTitle: "त्वरित परीक्षण हेतु ऐतिहासिक नमूने",
     loadSampleBtn: "यह नमूना लोड करें",
     
-    // Split Viewer
+    // Split Viewer & Mobile Modes
     sourceImageTab: "मूल पाण्डुलिपि पृष्ठ (Source Document)",
     verifiedTextTab: "सत्यापित देवनागरी पाठ (Verified Text)",
+    workspaceModeScan: "पाण्डुलिपि",
+    workspaceModeEditor: "देवनागरी पाठ",
+    workspaceModeSplit: "तुलना (Split)",
+    menu: "मेन्यू",
+    close: "बंद करें",
     pageNavigator: "पृष्ठ संख्या",
     ofPages: "कुल",
     prevPage: "पिछला पृष्ठ",
@@ -65,13 +70,13 @@ export const translations = {
     markConfirmed: "मानवीय रूप से प्रमाणित करें (Confirm)",
     
     // Verification Stages
-    stagesTitle: "४-चरणीय OCR सत्यापन एवं भाषाई शुद्धि तंत्र",
+    stagesTitle: "५-चरणीय OCR सत्यापन एवं भाषाई शुद्धि तंत्र",
     stage1Name: "चरण १: चित्र पूर्व-प्रसंस्करण",
     stage1Desc: "झुकाव सुधार (Deskew), अस्पष्टता माप एवं मात्रा-संरक्षण",
     stage2Name: "चरण २: प्राथमिक देवनागरी OCR",
     stage2Desc: "टेसरेक्ट LSTM तंत्र (हिन्दी + देवनागरी + संस्कृत मॉडल)",
-    stage3Name: "चरण ३: स्वतंत्र दोहरा सत्यापन",
-    stage3Desc: "द्वि-इंजन मिलान, वर्ण-स्तर विसंगति एवं मात्रा भ्रम पहचान",
+    stage3Name: "चरण ३: द्वितीयक टेसरेक्ट OCR पास (मात्रा व वर्ण तुलना)",
+    stage3Desc: "विशिष्ट देवनागरी लिपि मॉडल (PSM 3) द्वारा तुलनात्मक संवीक्षा व मतभेद पहचान",
     stage4Name: "चरण ४: भाषाई एवं यूनिकोड नियम",
     stage4Desc: "अमान्य मात्रा संयोजन एवं प्राचीन/धार्मिक शब्दावली संरक्षण",
     stage5Name: "चरण ५: समग्र सामंजस्य एवं दृष्टिगत संवीक्षा",
@@ -87,7 +92,7 @@ export const translations = {
     inspectTitle: "वर्ण एवं शब्द संवीक्षा",
     sourcePatchTitle: "मूल पाण्डुलिपि से आवर्धित अंश (Source Image Patch)",
     primaryReading: "प्राथमिक OCR पाठ:",
-    secondaryReading: "स्वतंत्र द्वितीयक पाठ:",
+    secondaryReading: "द्वितीयक टेसरेक्ट पाठ (Secondary Pass):",
     confidenceLabel: "विश्वास स्तर (Confidence):",
     linguisticNote: "भाषाई विश्लेषण:",
     suggestionLabel: "सुझाया गया संशोधन:",
@@ -117,13 +122,13 @@ export const translations = {
     downloadBtn: "डाउनलोड करें",
     
     // Transparency Disclaimer
-    transparencyNotice: "महत्वपूर्ण ध्यातव्य: यह प्रणाली स्वचालित बहु-स्तरीय सत्यापन करती है; यह १००% अचूकता का मिथ्या दावा नहीं करती। प्राचीन धार्मिक ग्रन्थों के संरक्षण हेतु मूल पाण्डुलिपि से दृष्टिगत मिलान सदैव अनुशंसित है।"
+    transparencyNotice: "महत्वपूर्ण पारदर्शी सूचना: यह प्रणाली स्वचालित बहु-स्तरीय सत्यापन (द्वि-कॉन्फ़िगरेशन टेसरेक्ट तुलना, यूनिकोड नियम व अपरिवर्तनीय ट्रिगर) करती है। यह १००% अचूकता अथवा पूर्णतः स्वतंत्र एंसेंबल का मिथ्या दावा नहीं करती; मूल ग्रन्थ से दृष्टिगत मिलान सदैव आवश्यक है।"
   },
   
   en: {
     appTitle: "VaniScript",
     appSubtitle: "Devanagari Manuscript & Rare Religious Literature OCR Preservation Platform",
-    tagline: "4-Stage Independent Verification Pipeline for Accurate, Editable, and Copyable Digital Text",
+    tagline: "5-Stage Transparent Verification Pipeline (Dual-Model Tesseract Comparison & Linguistic Unicode Rules)",
     
     // Header
     navUpload: "Upload Document",
@@ -157,9 +162,14 @@ export const translations = {
     sampleTitle: "Authentic Historical Manuscript Samples",
     loadSampleBtn: "Load This Sample",
     
-    // Split Viewer
+    // Split Viewer & Mobile Modes
     sourceImageTab: "Source Manuscript Page",
     verifiedTextTab: "Verified Devanagari Text",
+    workspaceModeScan: "Manuscript",
+    workspaceModeEditor: "Devanagari Text",
+    workspaceModeSplit: "Split View",
+    menu: "Menu",
+    close: "Close",
     pageNavigator: "Page",
     ofPages: "of",
     prevPage: "Previous Page",
@@ -184,13 +194,13 @@ export const translations = {
     markConfirmed: "Manually Confirm",
     
     // Verification Stages
-    stagesTitle: "4-Stage OCR Verification & Linguistic Validation System",
+    stagesTitle: "5-Stage OCR Verification & Linguistic Validation System",
     stage1Name: "Stage 1: Image Preprocessing",
     stage1Desc: "Devanagari deskew, blur/contrast metrics & thin-stroke preservation",
     stage2Name: "Stage 2: Primary Devanagari OCR",
     stage2Desc: "Tesseract LSTM engine with hin+Devanagari+san language models",
-    stage3Name: "Stage 3: Independent Cross-Verification",
-    stage3Desc: "Dual-engine cross-verification, alignment & glyph confusion detector",
+    stage3Name: "Stage 3: Secondary Tesseract OCR Pass (Cross-Model Comparison)",
+    stage3Desc: "Comparison with dedicated Devanagari script model (PSM 3) for matra and glyph discrepancies",
     stage4Name: "Stage 4: Linguistic & Unicode Rules",
     stage4Desc: "Devanagari Unicode integrity & historical orthography preservation",
     stage5Name: "Stage 5: Structural Consistency Audit",
@@ -206,7 +216,7 @@ export const translations = {
     inspectTitle: "Character & Word Inspector",
     sourcePatchTitle: "Magnified Source Image Cutout",
     primaryReading: "Primary Engine Reading:",
-    secondaryReading: "Secondary Engine Reading:",
+    secondaryReading: "Secondary Tesseract Reading (PSM 3):",
     confidenceLabel: "Confidence Score:",
     linguisticNote: "Linguistic Note:",
     suggestionLabel: "Suggested Reading:",
@@ -236,6 +246,7 @@ export const translations = {
     downloadBtn: "Download",
     
     // Transparency Disclaimer
-    transparencyNotice: "Important Note: This system performs multi-stage automated verification and never claims 100% correctness. Comparison against the original manuscript is essential for historical preservation."
+    transparencyNotice: "Important Transparency Notice: This system executes multi-stage algorithmic verification (dual Tesseract configuration passes, Unicode rules, and append-only database triggers). It does not claim 100% accuracy or an independent multi-engine ensemble; visual verification against the original source manuscript is always essential."
   }
 };
+

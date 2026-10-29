@@ -6,6 +6,9 @@ export interface WordToken {
   index: number;
   text: string;
   original_text: string;
+  edited_text?: string | null;
+  confirmed_text?: string | null;
+  correction_status?: 'ORIGINAL' | 'EDITED' | 'CONFIRMED' | string;
   confidence: number;
   confidence_tier: ConfidenceTier;
   bbox: [number, number, number, number]; // [x, y, w, h]
@@ -89,10 +92,17 @@ export interface PageData {
   preprocessed_image_path: string;
   quality_metrics: QualityMetrics;
   raw_ocr_text: string;
+  original_ocr_text?: string;
   verified_text: string;
+  reviewed_text?: string;
+  confirmed_text?: string;
   word_tokens: WordToken[];
   stage_metrics: StageMetrics;
   status: string;
+  error_code?: string;
+  error_message?: string;
+  retry_count?: number;
+  provenance?: Record<string, any>;
 }
 
 export interface DocumentData {
@@ -102,12 +112,22 @@ export interface DocumentData {
   file_type: 'image' | 'pdf';
   total_pages: number;
   processed_pages: number;
-  status: 'pending' | 'processing' | 'completed' | 'error';
-  verification_status: 'Needs Review' | 'Verified by Available Checks' | 'Manually Confirmed';
+  status: string;
+  verification_status: string;
   collection_name: string;
   created_at: string;
   updated_at: string;
   preview_text?: string;
+  provenance?: Record<string, any>;
+}
+
+export interface UnresolvedPageInfo {
+  page_number: number;
+  status: string;
+  error_code: string;
+  error_message: string;
+  retry_count: number;
+  flagged_tokens_count: number;
 }
 
 export interface CorrectionLog {
@@ -129,3 +149,4 @@ export interface BenchmarkCase {
   ground_truth: string;
   notes: string;
 }
+
