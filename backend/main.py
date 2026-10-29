@@ -33,7 +33,13 @@ from core.stage5_consistency_checker import run_consistency_check
 from core.exporter import export_as_txt, export_as_docx, export_as_json, export_as_html_printable
 from core.benchmark import BENCHMARK_CASES, run_benchmark_evaluation
 from core.image_adjuster import detect_smart_crop, apply_image_adjustment, get_image_info
-from core.image_compressor import compress_image, get_file_sha256, verify_file_integrity
+from core.image_compressor import (
+    compress_image,
+    compress_with_ocr_quality_gate,
+    is_phone_or_large_photo,
+    get_file_sha256,
+    verify_file_integrity
+)
 from samples.sample_data import generate_samples
 
 class CropBoxInput(BaseModel):
@@ -401,14 +407,25 @@ async def upload_document(
     
     # Generate initial format-aware smart compression derivative for each page
     comp_mode = (compression_mode or "smart").lower().strip()
+    phone_photo_detected = False
     for p_idx, p_path in enumerate(page_paths):
         p_num = p_idx + 1
         p_sha256 = get_file_sha256(p_path)
         opt_path = doc_upload_dir / f"page_{p_num}_optimized.webp"
         try:
-            comp_res = compress_image(str(p_path), str(opt_path), mode=comp_mode)
+            is_phone, _ = is_phone_or_large_photo(str(p_path))
+            if is_phone:
+                phone_photo_detected = True
+            
+            # For phone photos with auto_process on page 1, pass through OCR quality gate
+            if auto_process and p_num == 1 and is_phone and comp_mode == "smart":
+                comp_res = compress_with_ocr_quality_gate(str(p_path), str(opt_path), mode=comp_mode)
+            else:
+                comp_res = compress_image(str(p_path), str(opt_path), mode=comp_mode)
+                
             opt_url = to_safe_rel_url(str(opt_path))
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Failed initial compression for page {p_num}: {e}")
             comp_res = {}
             opt_url = ""
             
@@ -453,7 +470,8 @@ async def upload_document(
         "title": doc_title,
         "file_type": file_type,
         "total_pages": total_pages,
-        "status": DOC_STATUS_OCR_COMPLETE if auto_process else "PENDING_ADJUSTMENT"
+        "status": DOC_STATUS_OCR_COMPLETE if auto_process else "PENDING_ADJUSTMENT",
+        "is_phone_photo": phone_photo_detected
     }
 
 @app.post("/api/process/{doc_id}")
@@ -793,6 +811,10 @@ def get_page_compression_info_endpoint(doc_id: str, page_number: int):
         "effective_mode": meta.get("effective_mode", "Smart Lossless WebP"),
         "is_lossless": meta.get("is_lossless", True),
         "is_fallback": meta.get("is_fallback", False),
+        "is_phone_photo": meta.get("is_phone_photo", False),
+        "quality": meta.get("quality", 100 if meta.get("is_lossless") else 90),
+        "quality_gate_passed": meta.get("quality_gate_passed", True),
+        "cer_delta": meta.get("cer_delta", 0.0),
         "original_dimensions": meta.get("original_dimensions", []),
         "compressed_dimensions": meta.get("compressed_dimensions", []),
         "optimized_image_url": to_safe_rel_url(str(opt_file)) if has_opt else page.get("original_image_path")

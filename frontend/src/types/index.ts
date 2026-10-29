@@ -130,6 +130,10 @@ export interface CompressionMetadata {
   compressed_sha256: string;
   is_lossless: boolean;
   is_fallback: boolean;
+  is_phone_photo?: boolean;
+  quality?: number;
+  quality_gate_passed?: boolean;
+  cer_delta?: number;
   applied_at: string;
 }
 
@@ -147,6 +151,10 @@ export interface CompressionInfoResponse {
   effective_mode: string;
   is_lossless: boolean;
   is_fallback: boolean;
+  is_phone_photo?: boolean;
+  quality?: number;
+  quality_gate_passed?: boolean;
+  cer_delta?: number;
   original_dimensions: [number, number];
   compressed_dimensions: [number, number];
   optimized_image_url: string;

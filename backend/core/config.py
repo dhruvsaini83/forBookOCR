@@ -40,6 +40,16 @@ MAX_IMAGE_PIXELS = 64_000_000  # 64 Megapixels cap to prevent decompression bomb
 MAX_PDF_PAGES = 150
 TESSERACT_TIMEOUT_SECONDS = 30
 
+# Phone Camera Automatic Compression & Storage Policy Settings
+ARCHIVAL_STORAGE_POLICY = os.environ.get("ARCHIVAL_STORAGE_POLICY", "retain_all")  # retain_all | purge_raw_after_export
+PHONE_AUTO_COMPRESSION_ENABLED = True
+PHONE_TARGET_MAX_BYTES = 3 * 1024 * 1024  # Target ~1-3 MB for large phone photos
+PHONE_TARGET_MIN_BYTES = 1 * 1024 * 1024
+PHONE_INITIAL_QUALITY = 90  # Start testing at quality 90
+PHONE_FALLBACK_QUALITY = 95  # Step up to quality 95 if quality drops
+PHONE_MAX_WORKING_DIMENSION = 4000  # Tested OCR-safe resolution limit (preserves >300-400 DPI)
+PHONE_MAX_ALLOWED_CER_DELTA = 3.0  # Max acceptable CER increase percentage before retry/fallback
+
 ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 ALLOWED_PDF_EXTENSIONS = {".pdf"}
 ALLOWED_EXTENSIONS = ALLOWED_IMAGE_EXTENSIONS | ALLOWED_PDF_EXTENSIONS

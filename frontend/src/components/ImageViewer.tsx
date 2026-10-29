@@ -172,7 +172,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
                   : 'Archival'}
               </span>
               <span className="text-[10px] text-amber-700/80 hidden xl:inline font-sans font-medium">
-                ({compressionMetadata.is_lossless ? 'Lossless' : 'Q92'})
+                ({compressionMetadata.is_lossless ? 'Lossless' : (compressionMetadata.is_phone_photo ? `Phone Q${compressionMetadata.quality || 90}` : `Q${compressionMetadata.quality || 92}`)})
               </span>
             </div>
           )}

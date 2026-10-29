@@ -3,7 +3,7 @@ import {
   X, Crop, RotateCcw, RotateCw, RefreshCw, 
   Undo2, Redo2, Check, ZoomIn, ZoomOut, 
   ChevronLeft, ChevronRight, Sliders, AlertCircle, Sparkles,
-  Zap, CheckCircle2, Eye
+  Zap, CheckCircle2, Eye, Smartphone
 } from 'lucide-react';
 import type { Language } from '../i18n/translations';
 import { translations } from '../i18n/translations';
@@ -713,6 +713,13 @@ export const ImageAdjustmentModal: React.FC<ImageAdjustmentModalProps> = ({
                 <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-800 border border-amber-200/80 px-2 py-0.5 rounded-md text-[10px] font-semibold">
                   <CheckCircle2 className="w-3 h-3 text-amber-600" />
                   {t.losslessGuaranteeBadge}
+                </span>
+              )}
+
+              {compressionInfo.is_phone_photo && (
+                <span className="inline-flex items-center gap-1 bg-blue-50 text-blue-800 border border-blue-200/80 px-2 py-0.5 rounded-md text-[10px] font-semibold">
+                  <Smartphone className="w-3 h-3 text-blue-600" />
+                  Phone (Q{compressionInfo.quality || 90})
                 </span>
               )}
 

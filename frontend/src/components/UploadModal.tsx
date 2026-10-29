@@ -203,6 +203,12 @@ export const UploadModal: React.FC<UploadModalProps> = ({
                 <span className="text-xs text-stone-500 mt-0.5">
                   ({(file.size / (1024 * 1024)).toFixed(2)} MB)
                 </span>
+                {file.size > 3 * 1024 * 1024 && (
+                  <div className="mt-2 px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-200/80 text-amber-900 text-[11.5px] flex items-center gap-1.5 font-devanagari max-w-sm text-center">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                    <span>{t.phonePhotoDetectedBadge}: {t.phonePhotoOptimizedNotice}</span>
+                  </div>
+                )}
                 <button
                   type="button"
                   onClick={(e) => {

@@ -103,6 +103,10 @@ export const translations = {
     savingsBadge: "बचत:",
     losslessGuaranteeBadge: "✓ 100% पिक्सेल सुरक्षित (Lossless)",
     archivalIntegrityBadge: "✓ मूल स्कैन SHA-256 सुरक्षित",
+    phonePhotoDetectedBadge: "📱 फोन कैमरा चित्र पहचाना गया",
+    phonePhotoOptimizedNotice: "अपलोड पर 1-3 MB कार्य प्रतिलिपि स्वतः निर्मित (मूल स्कैन सुरक्षित)",
+    qualityGatePassedBadge: "✓ OCR गुणवत्ता द्वार पारित",
+    phoneQualityLabel: "चयनित गुणवत्ता:",
     compare100Zoom: "100% ज़ूम पर तुलना करें",
     compressionAppliedToast: "चित्र अनुकूलन सफलतापूर्वक लागू किया गया!",
     
@@ -272,6 +276,10 @@ export const translations = {
     savingsBadge: "Saved:",
     losslessGuaranteeBadge: "✓ 100% Bit-Perfect (Lossless)",
     archivalIntegrityBadge: "✓ Archival SHA-256 Verified",
+    phonePhotoDetectedBadge: "📱 Phone Camera Photo Detected",
+    phonePhotoOptimizedNotice: "Auto-optimized to 1-3 MB working copy on upload (original archival untouched)",
+    qualityGatePassedBadge: "✓ OCR Quality Gate Passed",
+    phoneQualityLabel: "Selected Quality:",
     compare100Zoom: "Compare at 100% Zoom",
     compressionAppliedToast: "Image optimization applied successfully!",
     
