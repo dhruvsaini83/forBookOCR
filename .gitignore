@@ -24,3 +24,14 @@ tesseract/
 *.log
 .DS_Store
 Thumbs.db
+
+
+# Generated OCR storage files
+backend/storage/test.png
+backend/storage/test_enh.png
+
+# Generated UI test screenshots
+tests/screenshots/
+
+# Cloned Hugging Face subfolder
+vaniscript-hindi-ocr/
