@@ -90,7 +90,8 @@ export const UploadModal: React.FC<UploadModalProps> = ({
       const shouldAutoProcess = !adjustBeforeOcr && autoProcess;
       formData.append('auto_process', shouldAutoProcess ? 'true' : 'false');
 
-      const res = await fetch('/api/upload', {
+      const backendUrl = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+      const res = await fetch(`${backendUrl}/api/upload`, {
         method: 'POST',
         body: formData,
       });

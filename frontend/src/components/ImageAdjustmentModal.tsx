@@ -168,7 +168,10 @@ export const ImageAdjustmentModal: React.FC<ImageAdjustmentModalProps> = ({
 
   const formatImgUrl = (url: string) => {
     if (!url) return '';
-    return url.startsWith('http') || url.startsWith('/') ? url : `/${url}`;
+    if (url.startsWith('http://') || url.startsWith('https://')) return url;
+    const cleanPath = url.startsWith('/') ? url : `/${url}`;
+    const backendBase = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+    return `${backendBase}${cleanPath}`;
   };
 
   const handleImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {

@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: vaniscript-hindi-ocr
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: Dockerfile
+    healthCheckPath: /api/health
+    envVars:
+      - key: PORT
+        value: 8000
+      - key: ARCHIVAL_STORAGE_POLICY
+        value: retain_all
+      - key: PYTHONIOENCODING
+        value: utf-8
