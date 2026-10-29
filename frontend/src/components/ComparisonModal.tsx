@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   X, GitCompare, Zap, Check, Copy, 
-  RefreshCw, AlertCircle, CheckCircle2, SplitSquareVertical
+  RefreshCw, AlertCircle, CheckCircle2, SplitSquareVertical, Play
 } from 'lucide-react';
 import type { Language } from '../i18n/translations';
 import { translations } from '../i18n/translations';
@@ -19,6 +19,19 @@ interface ComparisonModalProps {
   onSelectEngineSuccess?: () => Promise<void> | void;
 }
 
+export const hasValidComparison = (comp: any): comp is ComparisonData => {
+  return Boolean(
+    comp &&
+    typeof comp === 'object' &&
+    comp.summary &&
+    typeof comp.summary === 'object' &&
+    comp.tesseract &&
+    typeof comp.tesseract === 'object' &&
+    comp.easyocr &&
+    typeof comp.easyocr === 'object'
+  );
+};
+
 export const ComparisonModal: React.FC<ComparisonModalProps> = ({
   isOpen,
   onClose,
@@ -30,7 +43,9 @@ export const ComparisonModal: React.FC<ComparisonModalProps> = ({
   onSelectEngineSuccess
 }) => {
   const t = translations[lang];
-  const [comparison, setComparison] = useState<ComparisonData | null>(initialComparison || null);
+  const [comparison, setComparison] = useState<ComparisonData | null>(
+    initialComparison && hasValidComparison(initialComparison) ? initialComparison : null
+  );
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [copiedEngine, setCopiedEngine] = useState<string | null>(null);
@@ -48,34 +63,58 @@ export const ComparisonModal: React.FC<ComparisonModalProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, isLoading, isApplyingSelection, onClose]);
 
-  // Load comparison data if not already passed
+  // Load comparison data when modal opens or document/page changes
   useEffect(() => {
-    if (!isOpen) return;
-    if (initialComparison) {
-      setComparison(initialComparison);
+    if (!isOpen) {
+      setError(null);
       return;
     }
+
+    if (initialComparison && hasValidComparison(initialComparison)) {
+      setComparison(initialComparison);
+      setIsLoading(false);
+      return;
+    }
+
+    let isMounted = true;
 
     const fetchExistingOrRun = async () => {
       try {
         setIsLoading(true);
         setError(null);
+        setComparison(null);
+
         const res = await api.getPageComparison(documentId, pageNumber);
-        if (res.has_comparison && res.comparison) {
+        if (!isMounted) return;
+
+        if (res.has_comparison && hasValidComparison(res.comparison)) {
           setComparison(res.comparison);
         } else {
           // If never run, run comparison now
           const compRes = await api.comparePageOcr(documentId, pageNumber);
-          setComparison(compRes);
+          if (!isMounted) return;
+
+          if (hasValidComparison(compRes)) {
+            setComparison(compRes);
+          } else {
+            setError('तुलना परिणाम प्राप्त करने में त्रुटि हुई।');
+          }
         }
       } catch (err: any) {
+        if (!isMounted) return;
         setError(err.message || 'तुलना निष्पादित करने में त्रुटि हुई।');
       } finally {
-        setIsLoading(false);
+        if (isMounted) {
+          setIsLoading(false);
+        }
       }
     };
 
     fetchExistingOrRun();
+
+    return () => {
+      isMounted = false;
+    };
   }, [isOpen, documentId, pageNumber, initialComparison]);
 
   if (!isOpen) return null;
@@ -85,7 +124,11 @@ export const ComparisonModal: React.FC<ComparisonModalProps> = ({
       setIsLoading(true);
       setError(null);
       const res = await api.comparePageOcr(documentId, pageNumber);
-      setComparison(res);
+      if (hasValidComparison(res)) {
+        setComparison(res);
+      } else {
+        setError('तुलना परिणाम मान्य नहीं है।');
+      }
     } catch (err: any) {
       setError(err.message || 'तुलना निष्पादित करने में त्रुटि हुई।');
     } finally {
@@ -119,6 +162,8 @@ export const ComparisonModal: React.FC<ComparisonModalProps> = ({
     }
   };
 
+  const isComparisonReady = hasValidComparison(comparison);
+
   return (
     <div 
       className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-stone-950/75 backdrop-blur-xs animate-fade-in"
@@ -140,8 +185,8 @@ export const ComparisonModal: React.FC<ComparisonModalProps> = ({
                   Page {pageNumber}
                 </span>
               </h2>
-              <p className="text-xs text-stone-500 font-devanagari hidden sm:block">
-                एक ही मूल चित्र पर दोनों इंजनों के निष्कर्षण, गति, और मात्रा-संरक्षण की तुलना।
+              <p className="text-xs text-stone-500 font-devanagari">
+                {t.comparisonModalDesc}
               </p>
             </div>
           </div>
@@ -151,17 +196,18 @@ export const ComparisonModal: React.FC<ComparisonModalProps> = ({
               type="button"
               onClick={handleRunComparison}
               disabled={isLoading || isApplyingSelection}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-stone-300 bg-white hover:bg-stone-100 text-stone-700 text-xs font-semibold font-devanagari transition-colors disabled:opacity-50"
+              className="px-3 py-1.5 rounded-xl border border-stone-300 bg-white hover:bg-stone-100 disabled:opacity-50 text-xs font-semibold text-stone-700 flex items-center gap-1.5 transition-colors font-devanagari"
+              title="पुनः तुलना निष्पादित करें"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-              <span>पुनः तुलना करें</span>
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin text-vedic-600' : ''}`} />
+              <span className="hidden sm:inline">पुनः जाँचें</span>
             </button>
 
             <button
               type="button"
               onClick={onClose}
               disabled={isLoading || isApplyingSelection}
-              className="p-1.5 rounded-xl text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition-colors"
+              className="p-1.5 text-stone-400 hover:text-stone-700 hover:bg-stone-200/60 rounded-xl transition-colors"
               aria-label={t.close}
             >
               <X className="w-5 h-5" />
@@ -169,29 +215,26 @@ export const ComparisonModal: React.FC<ComparisonModalProps> = ({
           </div>
         </div>
 
-        {/* Error / Notice Banner */}
+        {/* Status Notice Banners */}
         {error && (
-          <div className="bg-rose-50 px-4 py-2 text-xs text-rose-800 border-b border-rose-100 flex items-center justify-between font-devanagari">
-            <span className="flex items-center gap-1.5">
-              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-              {error}
-            </span>
-            <button type="button" onClick={() => setError(null)} className="text-rose-700">
-              <X className="w-3.5 h-3.5" />
-            </button>
+          <div className="mx-4 sm:mx-6 mt-4 p-3 bg-red-50 border border-red-200 rounded-xl flex items-center gap-2.5 text-xs text-red-700 font-devanagari">
+            <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
+            <span>{error}</span>
           </div>
         )}
 
         {selectedEngineNotice && (
-          <div className="bg-emerald-50 px-4 py-2 text-xs text-emerald-800 border-b border-emerald-100 flex items-center gap-2 font-devanagari">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-            <span>{selectedEngineNotice} का पाठ सक्रिय कर दिया गया! सत्यापन चरण अद्यतन हो रहे हैं...</span>
+          <div className="mx-4 sm:mx-6 mt-4 p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-2.5 text-xs text-emerald-800 font-devanagari">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>
+              <strong>{selectedEngineNotice}</strong> का पाठ इस पृष्ठ के सक्रिय पाठ के रूप में सुरक्षित कर लिया गया है।
+            </span>
           </div>
         )}
 
         {/* Modal Body */}
         <div className="flex-1 overflow-y-auto p-3 sm:p-6 space-y-4 font-devanagari">
-          {isLoading && !comparison ? (
+          {isLoading && !isComparisonReady ? (
             <div className="py-20 flex flex-col items-center justify-center text-center">
               <RefreshCw className="w-8 h-8 text-vedic-600 animate-spin mb-3" />
               <span className="font-semibold text-stone-800 text-sm">
@@ -201,7 +244,7 @@ export const ComparisonModal: React.FC<ComparisonModalProps> = ({
                 (देवनागरी पाठ, मात्राओं एवं गति का तुलनात्मक विश्लेषण जारी है)
               </span>
             </div>
-          ) : comparison ? (
+          ) : isComparisonReady && comparison ? (
             <>
               {/* Summary Stats Cards */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
@@ -209,7 +252,7 @@ export const ComparisonModal: React.FC<ComparisonModalProps> = ({
                 <div className="bg-stone-50 border border-stone-200 rounded-xl p-3 flex flex-col">
                   <span className="text-[11px] text-stone-500 font-medium">{t.similarityLabel}</span>
                   <div className="text-lg font-bold text-stone-900 mt-0.5 font-mono">
-                    {comparison.similarity_ratio}%
+                    {comparison.similarity_ratio ?? 0}%
                   </div>
                   <span className="text-[10px] text-stone-400 mt-0.5">दोनों इंजनों के पाठ में सादृश्य</span>
                 </div>
@@ -219,10 +262,14 @@ export const ComparisonModal: React.FC<ComparisonModalProps> = ({
                   <span className="text-[11px] text-amber-900 font-medium">{t.fasterLabel}</span>
                   <div className="text-lg font-bold text-amber-950 mt-0.5 capitalize flex items-center gap-1 font-sans">
                     <Zap className="w-4 h-4 text-amber-600 shrink-0" />
-                    {comparison.summary.faster_engine}
+                    {comparison.summary?.faster_engine || 'Tesseract'}
                   </div>
                   <span className="text-[10px] text-amber-700 font-mono mt-0.5">
-                    {comparison.summary.speedup_factor}x faster ({comparison.summary.tesseract_time_ms < comparison.summary.easyocr_time_ms ? `${(comparison.summary.tesseract_time_ms / 1000).toFixed(2)}s vs ${(comparison.summary.easyocr_time_ms / 1000).toFixed(2)}s` : `${(comparison.summary.easyocr_time_ms / 1000).toFixed(2)}s vs ${(comparison.summary.tesseract_time_ms / 1000).toFixed(2)}s`})
+                    {comparison.summary?.speedup_factor ?? 1}x faster ({
+                      (comparison.summary?.tesseract_time_ms ?? 0) < (comparison.summary?.easyocr_time_ms ?? 0)
+                        ? `${((comparison.summary?.tesseract_time_ms ?? 0) / 1000).toFixed(2)}s vs ${((comparison.summary?.easyocr_time_ms ?? 0) / 1000).toFixed(2)}s`
+                        : `${((comparison.summary?.easyocr_time_ms ?? 0) / 1000).toFixed(2)}s vs ${((comparison.summary?.tesseract_time_ms ?? 0) / 1000).toFixed(2)}s`
+                    })
                   </span>
                 </div>
 
@@ -230,10 +277,10 @@ export const ComparisonModal: React.FC<ComparisonModalProps> = ({
                 <div className="bg-blue-50/60 border border-blue-200/80 rounded-xl p-3 flex flex-col">
                   <span className="text-[11px] text-blue-900 font-medium">Tesseract समय:</span>
                   <div className="text-lg font-bold text-blue-950 mt-0.5 font-mono">
-                    {(comparison.tesseract.processing_time_ms / 1000).toFixed(2)}s
+                    {((comparison.tesseract?.processing_time_ms ?? 0) / 1000).toFixed(2)}s
                   </div>
                   <span className="text-[10px] text-blue-700 mt-0.5">
-                    {comparison.tesseract.word_count} शब्द ({comparison.tesseract.char_count} वर्ण)
+                    {comparison.tesseract?.word_count ?? 0} शब्द ({comparison.tesseract?.char_count ?? 0} वर्ण)
                   </span>
                 </div>
 
@@ -241,10 +288,10 @@ export const ComparisonModal: React.FC<ComparisonModalProps> = ({
                 <div className="bg-purple-50/60 border border-purple-200/80 rounded-xl p-3 flex flex-col">
                   <span className="text-[11px] text-purple-900 font-medium">EasyOCR समय:</span>
                   <div className="text-lg font-bold text-purple-950 mt-0.5 font-mono">
-                    {(comparison.easyocr.processing_time_ms / 1000).toFixed(2)}s
+                    {((comparison.easyocr?.processing_time_ms ?? 0) / 1000).toFixed(2)}s
                   </div>
                   <span className="text-[10px] text-purple-700 mt-0.5">
-                    {comparison.easyocr.word_count} शब्द ({comparison.easyocr.char_count} वर्ण)
+                    {comparison.easyocr?.word_count ?? 0} शब्द ({comparison.easyocr?.char_count ?? 0} वर्ण)
                   </span>
                 </div>
               </div>
@@ -264,7 +311,7 @@ export const ComparisonModal: React.FC<ComparisonModalProps> = ({
                     <div className="flex items-center gap-1.5">
                       <button
                         type="button"
-                        onClick={() => handleCopy(comparison.tesseract.text, 'tesseract')}
+                        onClick={() => handleCopy(comparison.tesseract?.text || '', 'tesseract')}
                         className="px-2.5 py-1 rounded-lg border border-blue-200 bg-white hover:bg-blue-50 text-blue-800 text-xs font-semibold flex items-center gap-1 transition-colors"
                         title={t.copyTesseract}
                       >
@@ -285,7 +332,7 @@ export const ComparisonModal: React.FC<ComparisonModalProps> = ({
 
                   {/* Text Content */}
                   <div className="flex-1 my-3 bg-white border border-blue-100 rounded-xl p-3.5 font-devanagari text-stone-900 text-sm leading-relaxed whitespace-pre-wrap max-h-60 overflow-y-auto select-text shadow-2xs">
-                    {comparison.tesseract.text || (
+                    {comparison.tesseract?.text || (
                       <span className="text-stone-400 italic">कोई पाठ नहीं मिला</span>
                     )}
                   </div>
@@ -293,13 +340,13 @@ export const ComparisonModal: React.FC<ComparisonModalProps> = ({
                   {/* Bottom Panel Actions */}
                   <div className="pt-2 flex items-center justify-between border-t border-blue-200/60 text-xs">
                     <span className="text-blue-900 font-mono text-[11px]">
-                      {comparison.tesseract.char_count} वर्ण • {comparison.tesseract.word_count} शब्द
+                      {comparison.tesseract?.char_count ?? 0} वर्ण • {comparison.tesseract?.word_count ?? 0} शब्द
                     </span>
                     <button
                       type="button"
-                      onClick={() => handleSelectEngine('tesseract', comparison.tesseract.text)}
-                      disabled={isApplyingSelection || !comparison.tesseract.text}
-                      className="px-3.5 py-1.5 rounded-xl bg-blue-700 hover:bg-blue-800 disabled:opacity-50 text-white font-bold text-xs shadow-xs transition-colors flex items-center gap-1.5 font-devanagari"
+                      onClick={() => handleSelectEngine('tesseract', comparison.tesseract?.text || '')}
+                      disabled={isApplyingSelection || !comparison.tesseract?.text}
+                      className="px-3.5 py-1.5 rounded-xl bg-blue-700 hover:bg-blue-800 disabled:opacity-50 text-white font-bold text-xs shadow-xs transition-colors flex items-center gap-1.5 font-devanagari cursor-pointer"
                     >
                       <Check className="w-3.5 h-3.5" />
                       <span>{t.useTesseractBtn}</span>
@@ -320,7 +367,7 @@ export const ComparisonModal: React.FC<ComparisonModalProps> = ({
                     <div className="flex items-center gap-1.5">
                       <button
                         type="button"
-                        onClick={() => handleCopy(comparison.easyocr.text, 'easyocr')}
+                        onClick={() => handleCopy(comparison.easyocr?.text || '', 'easyocr')}
                         className="px-2.5 py-1 rounded-lg border border-purple-200 bg-white hover:bg-purple-50 text-purple-800 text-xs font-semibold flex items-center gap-1 transition-colors"
                         title={t.copyEasyOcr}
                       >
@@ -341,7 +388,7 @@ export const ComparisonModal: React.FC<ComparisonModalProps> = ({
 
                   {/* Text Content */}
                   <div className="flex-1 my-3 bg-white border border-purple-100 rounded-xl p-3.5 font-devanagari text-stone-900 text-sm leading-relaxed whitespace-pre-wrap max-h-60 overflow-y-auto select-text shadow-2xs">
-                    {comparison.easyocr.text || (
+                    {comparison.easyocr?.text || (
                       <span className="text-stone-400 italic">कोई पाठ नहीं मिला</span>
                     )}
                   </div>
@@ -349,13 +396,13 @@ export const ComparisonModal: React.FC<ComparisonModalProps> = ({
                   {/* Bottom Panel Actions */}
                   <div className="pt-2 flex items-center justify-between border-t border-purple-200/60 text-xs">
                     <span className="text-purple-900 font-mono text-[11px]">
-                      {comparison.easyocr.char_count} वर्ण • {comparison.easyocr.word_count} शब्द
+                      {comparison.easyocr?.char_count ?? 0} वर्ण • {comparison.easyocr?.word_count ?? 0} शब्द
                     </span>
                     <button
                       type="button"
-                      onClick={() => handleSelectEngine('easyocr', comparison.easyocr.text)}
-                      disabled={isApplyingSelection || !comparison.easyocr.text}
-                      className="px-3.5 py-1.5 rounded-xl bg-purple-700 hover:bg-purple-800 disabled:opacity-50 text-white font-bold text-xs shadow-xs transition-colors flex items-center gap-1.5 font-devanagari"
+                      onClick={() => handleSelectEngine('easyocr', comparison.easyocr?.text || '')}
+                      disabled={isApplyingSelection || !comparison.easyocr?.text}
+                      className="px-3.5 py-1.5 rounded-xl bg-purple-700 hover:bg-purple-800 disabled:opacity-50 text-white font-bold text-xs shadow-xs transition-colors flex items-center gap-1.5 font-devanagari cursor-pointer"
                     >
                       <Check className="w-3.5 h-3.5" />
                       <span>{t.useEasyOcrBtn}</span>
@@ -374,12 +421,12 @@ export const ComparisonModal: React.FC<ComparisonModalProps> = ({
                     </span>
                   </div>
                   <div className="text-[11px] text-stone-500 font-mono">
-                    {comparison.diff.exact_matches_count} समान खंड • {comparison.diff.differing_blocks_count} भिन्न खंड
+                    {comparison.diff?.exact_matches_count ?? 0} समान खंड • {comparison.diff?.differing_blocks_count ?? 0} भिन्न खंड
                   </div>
                 </div>
 
                 <div className="space-y-1.5 max-h-48 overflow-y-auto p-1">
-                  {comparison.diff.word_diffs.map((diff: WordDiffItem, dIdx: number) => {
+                  {(comparison.diff?.word_diffs || []).map((diff: WordDiffItem, dIdx: number) => {
                     if (diff.tag === 'equal') {
                       return (
                         <div key={dIdx} className="text-xs text-stone-700 bg-white px-2.5 py-1 rounded-lg border border-stone-100 font-mono flex items-center gap-2">
@@ -408,7 +455,28 @@ export const ComparisonModal: React.FC<ComparisonModalProps> = ({
                 </div>
               </div>
             </>
-          ) : null}
+          ) : (
+            <div className="py-16 flex flex-col items-center justify-center text-center">
+              <div className="w-12 h-12 rounded-2xl bg-stone-100 border border-stone-200 flex items-center justify-center text-stone-500 mb-3">
+                <GitCompare className="w-6 h-6" />
+              </div>
+              <h3 className="font-bold text-stone-800 text-sm">
+                इस पृष्ठ पर अभी OCR इंजन तुलना नहीं की गई है
+              </h3>
+              <p className="text-xs text-stone-500 max-w-sm mt-1">
+                Tesseract और EasyOCR दोनों को एक साथ चलाकर उनके देवनागरी पाठ, मात्राओं एवं गति की निष्पक्ष तुलना करें।
+              </p>
+              <button
+                type="button"
+                onClick={handleRunComparison}
+                disabled={isLoading}
+                className="mt-4 px-4 py-2 rounded-xl bg-vedic-700 hover:bg-vedic-800 text-white font-bold text-xs flex items-center gap-2 shadow-sm transition-all"
+              >
+                <Play className="w-3.5 h-3.5" />
+                <span>तुलना शुरू करें</span>
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Footer */}
@@ -420,7 +488,7 @@ export const ComparisonModal: React.FC<ComparisonModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 rounded-xl border border-stone-300 bg-white hover:bg-stone-100 font-semibold text-xs text-stone-700 transition-colors"
+            className="px-4 py-2 rounded-xl border border-stone-300 bg-white hover:bg-stone-100 font-semibold text-xs text-stone-700 transition-colors cursor-pointer"
           >
             {t.close}
           </button>

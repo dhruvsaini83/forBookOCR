@@ -537,7 +537,14 @@ export const App: React.FC = () => {
           documentId={currentDoc.id}
           pageNumber={currentPageNum}
           originalImageUrl={currentPage.original_image_path}
-          initialComparison={currentPage.comparison_data}
+          initialComparison={
+            currentPage.comparison_data && 
+            typeof currentPage.comparison_data === 'object' &&
+            Object.keys(currentPage.comparison_data).length > 0 &&
+            'summary' in currentPage.comparison_data
+              ? currentPage.comparison_data 
+              : null
+          }
           lang={lang}
           onSelectEngineSuccess={async () => {
             await loadDocument(currentDoc.id, currentPageNum);
