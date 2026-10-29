@@ -136,6 +136,37 @@ def generate_samples():
         "desc": "जटिल संयुक्ताक्षर, विसर्ग एवं वैदिक देवनागरी मुद्रण"
     })
     
+    # 4. Vintage Litho Print
+    bg4 = create_parchment_background(1200, 520)
+    draw4 = ImageDraw.Draw(bg4)
+    font4_title = get_hindi_font(36)
+    font4_text = get_hindi_font(32)
+    
+    draw4.text((410, 40), "॥ प्राचीन लीथो-मुद्रित भजन संग्रह ॥", fill=(135, 58, 20), font=font4_title)
+    draw4.line([(390, 90), (840, 90)], fill=(175, 75, 18), width=2)
+    
+    lines4 = [
+        "सिय राम मय सब जग जानी।",
+        "करहुँ प्रनाम जोरि जुग पानी॥",
+        "जानि कृपाकर किंकुर मोहू।",
+        "सब अपराध छमा करि छोहू॥"
+    ]
+    y_start = 130
+    for line in lines4:
+        draw4.text((140, y_start), line, fill=(42, 38, 32), font=font4_text)
+        y_start += 75
+        
+    path4 = SAMPLES_DIR / "vintage_litho_print.png"
+    bg4.save(str(path4))
+    samples.append({
+        "id": "sample-4",
+        "title": "प्राचीन लीथो-मुद्रित भजन संग्रह",
+        "filename": "vintage_litho_print.png",
+        "path": str(path4),
+        "collection": "पुरातन मुद्रण (Vintage Litho)",
+        "desc": "१९वीं शती लीथो-मुद्रित पद (स्याही फैलाव, ब-व समानता)"
+    })
+    
     return samples
 
 if __name__ == "__main__":

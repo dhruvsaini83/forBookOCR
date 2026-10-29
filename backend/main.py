@@ -41,6 +41,15 @@ from core.image_compressor import (
     verify_file_integrity
 )
 from samples.sample_data import generate_samples
+from core.easyocr_engine import is_easyocr_available, run_easyocr
+from core.ocr_comparison import compare_ocr_engines
+
+class SelectEngineRequest(BaseModel):
+    engine: str  # "tesseract" | "easyocr"
+    selected_text: Optional[str] = None
+
+class CompareOcrRequest(BaseModel):
+    ground_truth: Optional[str] = None
 
 class CropBoxInput(BaseModel):
     x: int
@@ -123,8 +132,8 @@ def to_safe_rel_url(p: str) -> str:
     except Exception:
         return f"/storage/processed/{Path(p).name}"
 
-def process_single_page_pipeline(doc_id: str, page_number: int, image_path: str) -> str:
-    """Executes the full 5-stage verification pipeline for a single page with error containment."""
+def process_single_page_pipeline(doc_id: str, page_number: int, image_path: str, engine: str = "tesseract") -> str:
+    """Executes the verification pipeline for a single page with error containment and engine selection."""
     page_id = f"{doc_id}_p{page_number}"
     db.update_page_status(doc_id, page_number, "PROCESSING")
     
@@ -149,11 +158,26 @@ def process_single_page_pipeline(doc_id: str, page_number: int, image_path: str)
         # Stage 1: Preprocessing & Quality Analysis
         enhanced_path, binarized_path, quality_metrics = preprocess_image_pipeline(target_path, PROCESSED_DIR)
         
-        # Stage 2: Primary Hindi/Devanagari OCR (with timeout guard)
-        stage2_res = run_primary_ocr(enhanced_path, lang="hin+Devanagari+san", timeout=TESSERACT_TIMEOUT_SECONDS)
-        
-        # Stage 3: Secondary Tesseract OCR Pass (Cross-Model/Configuration Comparison)
-        stage3_tokens, stage3_metrics = run_cross_verification(enhanced_path, stage2_res["word_tokens"], timeout=TESSERACT_TIMEOUT_SECONDS)
+        comparison_res = None
+        if engine == "easyocr":
+            # Stage 2: EasyOCR Extraction
+            stage2_res = run_easyocr(enhanced_path, timeout=TESSERACT_TIMEOUT_SECONDS)
+            stage3_tokens = stage2_res["word_tokens"]
+            stage3_metrics = {"engine": "EasyOCR Pass", "skipped_tesseract_cross": True}
+        elif engine == "compare":
+            # Compare both engines head-to-head on the identical enhanced image
+            comparison_res = compare_ocr_engines(enhanced_path)
+            stage2_res = {
+                "full_text": comparison_res["tesseract"]["text"],
+                "word_tokens": comparison_res["tesseract"]["tokens"],
+                "metrics": comparison_res["tesseract"]["metrics"]
+            }
+            stage3_tokens, stage3_metrics = run_cross_verification(enhanced_path, stage2_res["word_tokens"], timeout=TESSERACT_TIMEOUT_SECONDS)
+        else: # Default: Tesseract
+            # Stage 2: Primary Hindi/Devanagari OCR (with timeout guard)
+            stage2_res = run_primary_ocr(enhanced_path, lang="hin+Devanagari+san", timeout=TESSERACT_TIMEOUT_SECONDS)
+            # Stage 3: Secondary Tesseract OCR Pass
+            stage3_tokens, stage3_metrics = run_cross_verification(enhanced_path, stage2_res["word_tokens"], timeout=TESSERACT_TIMEOUT_SECONDS)
         
         # Stage 4: Devanagari Linguistic & Unicode Validation
         stage4_tokens, stage4_metrics = run_linguistic_verification(stage3_tokens)
@@ -199,6 +223,18 @@ def process_single_page_pipeline(doc_id: str, page_number: int, image_path: str)
             original_sha256=p_sha256,
             optimized_img=opt_rel_url
         )
+        
+        # If comparison was executed, save it into the page record
+        if comparison_res is not None:
+            db.update_page_ocr_comparison(
+                doc_id=doc_id,
+                page_number=page_number,
+                comparison_data=comparison_res,
+                easyocr_text=comparison_res["easyocr"]["text"],
+                easyocr_tokens=comparison_res["easyocr"]["tokens"],
+                easyocr_metrics=comparison_res["easyocr"]["metrics"]
+            )
+            
         return qa_report["overall_status"]
     except TimeoutError as te:
         db.save_page_result(
@@ -271,7 +307,8 @@ async def upload_document(
     title: Optional[str] = Form(None),
     collection_name: Optional[str] = Form("सामान्य (General)"),
     auto_process: bool = Form(True),
-    compression_mode: Optional[str] = Form("smart")
+    compression_mode: Optional[str] = Form("smart"),
+    ocr_engine: Optional[str] = Form("tesseract")
 ):
     """
     Secure document upload with magic byte inspection, filename sanitization,
@@ -451,16 +488,20 @@ async def upload_document(
             compression_metadata=comp_res
         )
     
+    chosen_engine = (ocr_engine or "tesseract").lower().strip()
+    if chosen_engine not in ("tesseract", "easyocr", "compare"):
+        chosen_engine = "tesseract"
+
     if auto_process:
         # Process page 1 immediately for snappy feedback
-        status_result = process_single_page_pipeline(doc_id, 1, page_paths[0])
+        status_result = process_single_page_pipeline(doc_id, 1, page_paths[0], engine=chosen_engine)
         db.update_document_status(doc_id, DOC_STATUS_OCR_COMPLETE, verification_status=status_result, processed_pages=1)
         
         # Multi-page background runner
         if total_pages > 1:
             def process_remaining():
                 for p_num in range(2, total_pages + 1):
-                    process_single_page_pipeline(doc_id, p_num, page_paths[p_num - 1])
+                    process_single_page_pipeline(doc_id, p_num, page_paths[p_num - 1], engine=chosen_engine)
                     db.update_document_status(doc_id, DOC_STATUS_OCR_COMPLETE, processed_pages=p_num)
             background_tasks.add_task(process_remaining)
             
@@ -471,12 +512,13 @@ async def upload_document(
         "file_type": file_type,
         "total_pages": total_pages,
         "status": DOC_STATUS_OCR_COMPLETE if auto_process else "PENDING_ADJUSTMENT",
-        "is_phone_photo": phone_photo_detected
+        "is_phone_photo": phone_photo_detected,
+        "ocr_engine": chosen_engine
     }
 
 @app.post("/api/process/{doc_id}")
-def process_document(doc_id: str, page_number: Optional[int] = Query(None)):
-    """Triggers verification pipeline for a document or specific page."""
+def process_document(doc_id: str, page_number: Optional[int] = Query(None), engine: Optional[str] = Query("tesseract")):
+    """Triggers verification pipeline for a document or specific page with engine selection."""
     doc = db.get_document_by_id(doc_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found.")
@@ -486,16 +528,19 @@ def process_document(doc_id: str, page_number: Optional[int] = Query(None)):
         raise HTTPException(status_code=404, detail="Document storage directory not found.")
         
     pages_to_process = [page_number] if page_number is not None else list(range(1, doc["total_pages"] + 1))
+    engine_choice = (engine or "tesseract").lower().strip()
+    if engine_choice not in ("tesseract", "easyocr", "compare"):
+        engine_choice = "tesseract"
     
     last_status = "Needs Review"
     for p_num in pages_to_process:
         candidates = list(doc_upload_dir.glob(f"page_{p_num}.*"))
         if not candidates:
             continue
-        last_status = process_single_page_pipeline(doc_id, p_num, str(candidates[0]))
+        last_status = process_single_page_pipeline(doc_id, p_num, str(candidates[0]), engine=engine_choice)
         
     db.update_document_status(doc_id, DOC_STATUS_OCR_COMPLETE, verification_status=last_status, processed_pages=len(pages_to_process))
-    return {"success": True, "document_id": doc_id, "status": last_status}
+    return {"success": True, "document_id": doc_id, "status": last_status, "ocr_engine": engine_choice}
 
 def get_original_page_file(doc_upload_dir: Path, page_number: int, doc_id: Optional[str] = None) -> Optional[Path]:
     """Finds original unadjusted source image for a given page, checking uploads and database paths."""
@@ -818,6 +863,175 @@ def get_page_compression_info_endpoint(doc_id: str, page_number: int):
         "original_dimensions": meta.get("original_dimensions", []),
         "compressed_dimensions": meta.get("compressed_dimensions", []),
         "optimized_image_url": to_safe_rel_url(str(opt_file)) if has_opt else page.get("original_image_path")
+    }
+
+@app.get("/api/ocr/engines")
+def get_available_engines_endpoint():
+    """Returns available local OCR engines and hardware capabilities."""
+    easy_avail, easy_info = is_easyocr_available()
+    return {
+        "default_engine": "tesseract",
+        "engines": [
+            {
+                "id": "tesseract",
+                "name": "Tesseract LSTM OCR",
+                "languages": ["hin", "Devanagari", "san"],
+                "available": True,
+                "version": Path(TESSERACT_CMD).name if TESSERACT_CMD else "5.4.0",
+                "device": "CPU"
+            },
+            {
+                "id": "easyocr",
+                "name": "EasyOCR Devanagari",
+                "languages": ["hi", "en"],
+                "available": easy_avail,
+                "version": easy_info,
+                "device": "CPU"
+            }
+        ]
+    }
+
+@app.post("/api/documents/{doc_id}/pages/{page_number}/compare-ocr")
+def compare_page_ocr_endpoint(doc_id: str, page_number: int, req: Optional[CompareOcrRequest] = None):
+    """
+    Executes a head-to-head comparison between Tesseract and EasyOCR on the same page image.
+    Stores both outputs separately and returns side-by-side diffs and timing metrics.
+    """
+    doc = db.get_document_by_id(doc_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found.")
+
+    doc_upload_dir = UPLOADS_DIR / doc_id
+    src_file = get_original_page_file(doc_upload_dir, page_number, doc_id=doc_id)
+    if not src_file:
+        raise HTTPException(status_code=404, detail=f"Source image for page {page_number} not found.")
+
+    adj_file = doc_upload_dir / f"page_{page_number}_adjusted.png"
+    opt_file = doc_upload_dir / f"page_{page_number}_optimized.webp"
+    
+    if adj_file.exists():
+        working_img = adj_file
+    elif opt_file.exists():
+        working_img = opt_file
+    else:
+        working_img = src_file
+
+    gt = req.ground_truth if req else None
+    
+    try:
+        comparison_res = compare_ocr_engines(str(working_img), ground_truth=gt)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"OCR comparison failed: {str(e)}")
+    
+    # Save into DB without overwriting Tesseract text
+    db.update_page_ocr_comparison(
+        doc_id=doc_id,
+        page_number=page_number,
+        comparison_data=comparison_res,
+        easyocr_text=comparison_res["easyocr"]["text"],
+        easyocr_tokens=comparison_res["easyocr"]["tokens"],
+        easyocr_metrics=comparison_res["easyocr"]["metrics"]
+    )
+    
+    return comparison_res
+
+@app.get("/api/documents/{doc_id}/pages/{page_number}/comparison")
+def get_page_comparison_endpoint(doc_id: str, page_number: int):
+    """Returns stored OCR comparison data for the page."""
+    page = db.get_page_by_number(doc_id, page_number)
+    if not page:
+        raise HTTPException(status_code=404, detail=f"Page {page_number} not found.")
+        
+    comp_data = page.get("comparison_data") or {}
+    return {
+        "document_id": doc_id,
+        "page_number": page_number,
+        "has_comparison": bool(comp_data),
+        "ocr_engine": page.get("ocr_engine", "tesseract"),
+        "tesseract_text": page.get("raw_ocr_text", ""),
+        "easyocr_text": page.get("easyocr_text", ""),
+        "comparison": comp_data
+    }
+
+@app.post("/api/documents/{doc_id}/pages/{page_number}/select-engine")
+def select_page_engine_endpoint(doc_id: str, page_number: int, req: SelectEngineRequest):
+    """
+    Selects either Tesseract or EasyOCR as the preferred active text for this page.
+    Feeds the chosen text and tokens into Stages 4 & 5 to ensure consistent verification.
+    """
+    page = db.get_page_by_number(doc_id, page_number)
+    if not page:
+        raise HTTPException(status_code=404, detail=f"Page {page_number} not found.")
+        
+    engine = req.engine.lower().strip()
+    if engine not in ("tesseract", "easyocr"):
+        raise HTTPException(status_code=400, detail="Invalid engine. Must be 'tesseract' or 'easyocr'.")
+
+    doc_upload_dir = UPLOADS_DIR / doc_id
+    src_file = get_original_page_file(doc_upload_dir, page_number, doc_id=doc_id)
+    adj_file = doc_upload_dir / f"page_{page_number}_adjusted.png"
+    opt_file = doc_upload_dir / f"page_{page_number}_optimized.webp"
+    working_img = adj_file if adj_file.exists() else (opt_file if opt_file.exists() else src_file)
+
+    if req.selected_text is not None and req.selected_text.strip():
+        chosen_text = req.selected_text.strip()
+        chosen_tokens = page.get("word_tokens", [])
+    elif engine == "easyocr":
+        chosen_text = page.get("easyocr_text", "")
+        chosen_tokens = page.get("easyocr_tokens", [])
+        if not chosen_text and working_img:
+            # Run EasyOCR if not previously executed
+            easy_res = run_easyocr(str(working_img))
+            chosen_text = easy_res["full_text"]
+            chosen_tokens = easy_res["word_tokens"]
+    else:
+        chosen_text = page.get("raw_ocr_text", "") or page.get("original_ocr_text", "")
+        chosen_tokens = page.get("word_tokens", [])
+
+    # Update database with engine preference
+    db.select_preferred_ocr_engine(
+        doc_id=doc_id,
+        page_number=page_number,
+        engine=engine,
+        selected_text=chosen_text,
+        selected_tokens=chosen_tokens
+    )
+
+    # Re-run Stage 4 & Stage 5 on chosen tokens
+    stage4_tokens, stage4_metrics = run_linguistic_verification(chosen_tokens)
+    stage_metrics = page.get("stage_metrics") or {}
+    final_tokens, qa_report, final_verified_text = run_consistency_check(
+        stage4_tokens,
+        str(working_img) if working_img else "",
+        page.get("quality_metrics", {}),
+        stage_metrics.get("stage2", {}),
+        stage_metrics.get("stage3", {}),
+        stage4_metrics
+    )
+    
+    stage_metrics["stage4"] = stage4_metrics
+    stage_metrics["stage5"] = qa_report
+    stage_metrics["selected_engine"] = engine
+    
+    db.update_page_verified_text(doc_id, page_number, chosen_text, mark_confirmed=False, text_version="reviewed")
+    
+    # Save correction audit log
+    db.save_correction_log(
+        doc_id=doc_id,
+        page_number=page_number,
+        word_index=0,
+        original_text=page.get("verified_text", ""),
+        corrected_text=chosen_text,
+        reason=f"Selected OCR engine: {engine}"
+    )
+
+    return {
+        "success": True,
+        "document_id": doc_id,
+        "page_number": page_number,
+        "selected_engine": engine,
+        "active_text": chosen_text,
+        "qa_status": qa_report.get("overall_status")
     }
 
 @app.get("/api/documents/{doc_id}/pages/{page_number}/status")

@@ -13,6 +13,7 @@ import { DocumentHistory } from './components/DocumentHistory';
 import { BenchmarkModal } from './components/BenchmarkModal';
 import { ExportModal } from './components/ExportModal';
 import { ImageAdjustmentModal } from './components/ImageAdjustmentModal';
+import { ComparisonModal } from './components/ComparisonModal';
 import type { Language } from './i18n/translations';
 import { translations } from './i18n/translations';
 import type { DocumentData, PageData, WordToken } from './types';
@@ -45,6 +46,7 @@ export const App: React.FC = () => {
   const [isBenchmarkOpen, setIsBenchmarkOpen] = useState<boolean>(false);
   const [isExportOpen, setIsExportOpen] = useState<boolean>(false);
   const [isAdjustmentOpen, setIsAdjustmentOpen] = useState<boolean>(false);
+  const [isComparisonOpen, setIsComparisonOpen] = useState<boolean>(false);
 
   const handleApplyAdjustmentSuccess = async (pageNum: number) => {
     if (!currentDoc) return;
@@ -379,6 +381,7 @@ export const App: React.FC = () => {
                   onSelectWord={handleWordSelect}
                   onOpenAdjustment={() => setIsAdjustmentOpen(true)}
                   onResetAdjustment={handleResetAdjustment}
+                  onOpenComparison={() => setIsComparisonOpen(true)}
                   lang={lang}
                 />
               </div>
@@ -524,6 +527,21 @@ export const App: React.FC = () => {
             }
           }}
           lang={lang}
+        />
+      )}
+
+      {currentDoc && currentPage && (
+        <ComparisonModal
+          isOpen={isComparisonOpen}
+          onClose={() => setIsComparisonOpen(false)}
+          documentId={currentDoc.id}
+          pageNumber={currentPageNum}
+          originalImageUrl={currentPage.original_image_path}
+          initialComparison={currentPage.comparison_data}
+          lang={lang}
+          onSelectEngineSuccess={async () => {
+            await loadDocument(currentDoc.id, currentPageNum);
+          }}
         />
       )}
     </div>

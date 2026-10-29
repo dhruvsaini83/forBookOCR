@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { ZoomIn, ZoomOut, RotateCw, Maximize2, Eye, EyeOff, ImageOff, Crop, Undo2, Zap } from 'lucide-react';
+import { ZoomIn, ZoomOut, RotateCw, Maximize2, Eye, EyeOff, ImageOff, Crop, Undo2, Zap, GitCompare } from 'lucide-react';
 import type { WordToken, CompressionMetadata } from '../types';
 import type { Language } from '../i18n/translations';
 import { translations } from '../i18n/translations';
@@ -15,6 +15,7 @@ interface ImageViewerProps {
   onSelectWord: (index: number) => void;
   onOpenAdjustment?: () => void;
   onResetAdjustment?: () => Promise<void>;
+  onOpenComparison?: () => void;
   lang: Language;
 }
 
@@ -29,6 +30,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
   onSelectWord,
   onOpenAdjustment,
   onResetAdjustment,
+  onOpenComparison,
   lang,
 }) => {
   const t = translations[lang];
@@ -143,6 +145,20 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
             >
               <Crop className="w-3.5 h-3.5 text-vedic-700" />
               <span>{t.adjustImageBtn}</span>
+            </button>
+          )}
+
+          {/* Compare OCR Engines Button */}
+          {onOpenComparison && (
+            <button
+              type="button"
+              onClick={onOpenComparison}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-blue-300 bg-blue-50 hover:bg-blue-100 text-blue-900 text-xs font-bold transition-colors font-devanagari shadow-2xs"
+              title={t.compareOcrBtn}
+              aria-label={t.compareOcrBtn}
+            >
+              <GitCompare className="w-3.5 h-3.5 text-blue-700" />
+              <span>इंजन तुलना</span>
             </button>
           )}
 

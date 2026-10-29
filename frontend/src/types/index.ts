@@ -160,6 +160,48 @@ export interface CompressionInfoResponse {
   optimized_image_url: string;
 }
 
+export type OcrEngine = 'tesseract' | 'easyocr' | 'compare';
+
+export interface WordDiffItem {
+  tag: 'equal' | 'replace' | 'delete' | 'insert';
+  tesseract_text: string;
+  easyocr_text: string;
+}
+
+export interface EngineComparisonResult {
+  name: string;
+  text: string;
+  char_count: number;
+  word_count: number;
+  processing_time_ms: number;
+  tokens: WordToken[];
+  metrics: Record<string, any>;
+  cer?: number | null;
+  wer?: number | null;
+  error?: string | null;
+}
+
+export interface ComparisonData {
+  image_path: string;
+  has_ground_truth: boolean;
+  similarity_ratio: number;
+  tesseract: EngineComparisonResult;
+  easyocr: EngineComparisonResult;
+  diff: {
+    word_diffs: WordDiffItem[];
+    differing_blocks_count: number;
+    exact_matches_count: number;
+  };
+  summary: {
+    faster_engine: string;
+    speedup_factor: number;
+    tesseract_time_ms: number;
+    easyocr_time_ms: number;
+    better_cer_engine?: string | null;
+    cer_margin?: number | null;
+  };
+}
+
 export interface PageData {
   id: string;
   document_id: string;
@@ -171,6 +213,11 @@ export interface PageData {
   optimized_image_path?: string;
   compression_metadata?: CompressionMetadata;
   original_sha256?: string;
+  ocr_engine?: string;
+  easyocr_text?: string;
+  easyocr_tokens?: WordToken[];
+  easyocr_metrics?: Record<string, any>;
+  comparison_data?: ComparisonData;
   quality_metrics: QualityMetrics;
   raw_ocr_text: string;
   original_ocr_text?: string;

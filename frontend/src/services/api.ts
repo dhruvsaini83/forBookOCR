@@ -1,4 +1,4 @@
-import type { DocumentData, PageData, CorrectionLog, BenchmarkCase, CropSuggestionResponse, ImageAdjustmentSettings, CompressionMode, CompressionMetadata, CompressionInfoResponse } from '../types';
+import type { DocumentData, PageData, CorrectionLog, BenchmarkCase, CropSuggestionResponse, ImageAdjustmentSettings, CompressionMode, CompressionMetadata, CompressionInfoResponse, OcrEngine, ComparisonData } from '../types';
 
 const API_BASE = '/api';
 
@@ -13,14 +13,16 @@ export const api = {
     title?: string,
     collection?: string,
     autoProcess = true,
-    compressionMode: CompressionMode = 'smart'
-  ): Promise<{ success: boolean; document_id: string; title: string; total_pages: number }> {
+    compressionMode: CompressionMode = 'smart',
+    ocrEngine: OcrEngine = 'tesseract'
+  ): Promise<{ success: boolean; document_id: string; title: string; total_pages: number; ocr_engine?: string }> {
     const formData = new FormData();
     formData.append('file', file);
     if (title) formData.append('title', title);
     if (collection) formData.append('collection_name', collection);
     formData.append('auto_process', autoProcess ? 'true' : 'false');
     formData.append('compression_mode', compressionMode);
+    formData.append('ocr_engine', ocrEngine);
 
     const res = await fetch(`${API_BASE}/upload`, {
       method: 'POST',
@@ -155,6 +157,51 @@ export const api = {
   async getCompressionInfo(docId: string, pageNumber: number): Promise<CompressionInfoResponse> {
     const res = await fetch(`${API_BASE}/documents/${docId}/pages/${pageNumber}/compression-info`);
     if (!res.ok) throw new Error('Failed to fetch compression information');
+    return res.json();
+  },
+
+  async comparePageOcr(docId: string, pageNumber: number, groundTruth?: string): Promise<ComparisonData> {
+    const res = await fetch(`${API_BASE}/documents/${docId}/pages/${pageNumber}/compare-ocr`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ground_truth: groundTruth || null }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Failed to compare OCR engines');
+    }
+    return res.json();
+  },
+
+  async getPageComparison(docId: string, pageNumber: number): Promise<{
+    document_id: string;
+    page_number: number;
+    has_comparison: boolean;
+    ocr_engine: string;
+    tesseract_text: string;
+    easyocr_text: string;
+    comparison: ComparisonData;
+  }> {
+    const res = await fetch(`${API_BASE}/documents/${docId}/pages/${pageNumber}/comparison`);
+    if (!res.ok) throw new Error('Failed to fetch comparison details');
+    return res.json();
+  },
+
+  async selectPreferredEngine(docId: string, pageNumber: number, engine: 'tesseract' | 'easyocr', selectedText?: string) {
+    const res = await fetch(`${API_BASE}/documents/${docId}/pages/${pageNumber}/select-engine`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ engine, selected_text: selectedText || null }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Failed to select preferred engine');
+    }
+    return res.json();
+  },
+
+  async getOcrEngines() {
+    const res = await fetch(`${API_BASE}/ocr/engines`);
     return res.json();
   },
 

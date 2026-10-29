@@ -5,13 +5,15 @@ from typing import List, Dict, Any, Optional
 from core.config import DB_PATH
 
 def get_db_connection() -> sqlite3.Connection:
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = sqlite3.connect(str(DB_PATH), timeout=30.0)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout = 30000;")
     return conn
 
 def init_db():
     conn = get_db_connection()
     cursor = conn.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL;")
     
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS documents (
@@ -96,7 +98,12 @@ def init_db():
         ("adjustment_metadata_json", "TEXT DEFAULT '{}'"),
         ("original_sha256", "TEXT DEFAULT ''"),
         ("optimized_image_path", "TEXT DEFAULT ''"),
-        ("compression_metadata_json", "TEXT DEFAULT '{}'")
+        ("compression_metadata_json", "TEXT DEFAULT '{}'"),
+        ("ocr_engine", "TEXT DEFAULT 'tesseract'"),
+        ("easyocr_text", "TEXT DEFAULT ''"),
+        ("easyocr_tokens_json", "TEXT DEFAULT '[]'"),
+        ("easyocr_metrics_json", "TEXT DEFAULT '{}'"),
+        ("comparison_data_json", "TEXT DEFAULT '{}'")
     ]
     for col_name, col_def in migrations:
         if col_name not in page_cols:
@@ -342,6 +349,9 @@ def get_page_by_number(doc_id: str, page_number: int) -> Optional[Dict[str, Any]
     d["provenance"] = json.loads(d.get("provenance_json") or "{}")
     d["adjustment_metadata"] = json.loads(d.get("adjustment_metadata_json") or "{}")
     d["compression_metadata"] = json.loads(d.get("compression_metadata_json") or "{}")
+    d["easyocr_tokens"] = json.loads(d.get("easyocr_tokens_json") or "[]")
+    d["easyocr_metrics"] = json.loads(d.get("easyocr_metrics_json") or "{}")
+    d["comparison_data"] = json.loads(d.get("comparison_data_json") or "{}")
     return d
 
 def get_all_pages_for_document(doc_id: str) -> List[Dict[str, Any]]:
@@ -359,8 +369,74 @@ def get_all_pages_for_document(doc_id: str) -> List[Dict[str, Any]]:
         d["provenance"] = json.loads(d.get("provenance_json") or "{}")
         d["adjustment_metadata"] = json.loads(d.get("adjustment_metadata_json") or "{}")
         d["compression_metadata"] = json.loads(d.get("compression_metadata_json") or "{}")
+        d["easyocr_tokens"] = json.loads(d.get("easyocr_tokens_json") or "[]")
+        d["easyocr_metrics"] = json.loads(d.get("easyocr_metrics_json") or "{}")
+        d["comparison_data"] = json.loads(d.get("comparison_data_json") or "{}")
         results.append(d)
     return results
+
+def update_page_ocr_comparison(
+    doc_id: str,
+    page_number: int,
+    comparison_data: dict,
+    easyocr_text: str = "",
+    easyocr_tokens: Optional[list] = None,
+    easyocr_metrics: Optional[dict] = None
+):
+    """Stores head-to-head comparison results and EasyOCR raw output without modifying original Tesseract text."""
+    now = datetime.now().isoformat()
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        UPDATE pages
+        SET comparison_data_json = ?,
+            easyocr_text = ?,
+            easyocr_tokens_json = ?,
+            easyocr_metrics_json = ?,
+            updated_at = ?
+        WHERE document_id = ? AND page_number = ?
+    """, (
+        json.dumps(comparison_data, ensure_ascii=False),
+        easyocr_text,
+        json.dumps(easyocr_tokens or [], ensure_ascii=False),
+        json.dumps(easyocr_metrics or {}, ensure_ascii=False),
+        now,
+        doc_id,
+        page_number
+    ))
+    conn.commit()
+    conn.close()
+
+def select_preferred_ocr_engine(
+    doc_id: str,
+    page_number: int,
+    engine: str,
+    selected_text: str,
+    selected_tokens: Optional[list] = None
+):
+    """Sets the chosen engine's output as the active working text for the 5-stage verification workflow."""
+    now = datetime.now().isoformat()
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        UPDATE pages
+        SET ocr_engine = ?,
+            verified_text = ?,
+            reviewed_text = ?,
+            word_tokens_json = COALESCE(?, word_tokens_json),
+            updated_at = ?
+        WHERE document_id = ? AND page_number = ?
+    """, (
+        engine,
+        selected_text,
+        selected_text,
+        json.dumps(selected_tokens, ensure_ascii=False) if selected_tokens is not None else None,
+        now,
+        doc_id,
+        page_number
+    ))
+    conn.commit()
+    conn.close()
 
 def update_page_compression(doc_id: str, page_number: int, optimized_img: str, compression_metadata: dict, original_sha256: Optional[str] = None):
     now = datetime.now().isoformat()

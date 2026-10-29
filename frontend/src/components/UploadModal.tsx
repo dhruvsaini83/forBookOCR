@@ -1,8 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { X, UploadCloud, Camera, FileText, Sparkles, AlertCircle, FileCheck2, ShieldCheck, Zap } from 'lucide-react';
+import { X, UploadCloud, Camera, FileText, Sparkles, AlertCircle, FileCheck2, ShieldCheck, Zap, GitCompare } from 'lucide-react';
 import type { Language } from '../i18n/translations';
 import { translations } from '../i18n/translations';
-import type { CompressionMode } from '../types';
+import type { CompressionMode, OcrEngine } from '../types';
 
 interface UploadModalProps {
   isOpen: boolean;
@@ -26,6 +26,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({
   const [title, setTitle] = useState<string>('');
   const [collection, setCollection] = useState<string>('सामान्य (General)');
   const [compressionMode, setCompressionMode] = useState<CompressionMode>('smart');
+  const [ocrEngine, setOcrEngine] = useState<OcrEngine>('tesseract');
   const [adjustBeforeOcr, setAdjustBeforeOcr] = useState<boolean>(true);
   const [autoProcess, setAutoProcess] = useState<boolean>(true);
   const [isUploading, setIsUploading] = useState<boolean>(false);
@@ -85,6 +86,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({
       if (title) formData.append('title', title);
       formData.append('collection_name', collection);
       formData.append('compression_mode', compressionMode);
+      formData.append('ocr_engine', ocrEngine);
       const shouldAutoProcess = !adjustBeforeOcr && autoProcess;
       formData.append('auto_process', shouldAutoProcess ? 'true' : 'false');
 
@@ -283,6 +285,8 @@ export const UploadModal: React.FC<UploadModalProps> = ({
             </div>
           </div>
 
+
+
           {/* Compression & Quality Preset Selector */}
           <div className="bg-stone-50 border border-stone-200/80 rounded-xl p-3">
             <div className="flex items-center justify-between mb-2">
@@ -315,6 +319,42 @@ export const UploadModal: React.FC<UploadModalProps> = ({
                   <div className="font-semibold font-devanagari text-[11.5px] leading-tight truncate">{m.label}</div>
                   <div className={`text-[10px] truncate ${compressionMode === m.id ? 'text-amber-200' : 'text-stone-400'}`}>
                     {m.desc}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* OCR Engine Selector (Tesseract, EasyOCR, Compare Both) */}
+          <div className="bg-stone-50 border border-stone-200/80 rounded-xl p-3">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-semibold text-stone-700 flex items-center gap-1.5 font-devanagari">
+                <GitCompare className="w-3.5 h-3.5 text-vedic-700" />
+                {t.engineSelectorLabel}
+              </span>
+              <span className="text-[11px] text-stone-500 font-sans">
+                Local CPU Execution
+              </span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
+              {[
+                { id: 'tesseract' as OcrEngine, label: t.engineTesseract, desc: 'LSTM (Default)' },
+                { id: 'easyocr' as OcrEngine, label: t.engineEasyOCR, desc: 'CRAFT + ResNet' },
+                { id: 'compare' as OcrEngine, label: t.engineCompare, desc: 'Head-to-Head' },
+              ].map((eng) => (
+                <button
+                  key={eng.id}
+                  type="button"
+                  onClick={() => setOcrEngine(eng.id)}
+                  className={`px-2.5 py-1.5 rounded-lg text-left border transition-all text-xs ${
+                    ocrEngine === eng.id
+                      ? 'bg-vedic-700 text-white border-vedic-700 shadow-2xs'
+                      : 'bg-white text-stone-700 border-stone-200 hover:bg-stone-100'
+                  }`}
+                >
+                  <div className="font-semibold font-devanagari text-[11.5px] leading-tight truncate">{eng.label}</div>
+                  <div className={`text-[10px] truncate ${ocrEngine === eng.id ? 'text-amber-200' : 'text-stone-400'}`}>
+                    {eng.desc}
                   </div>
                 </button>
               ))}
