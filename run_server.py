@@ -16,6 +16,7 @@ BACKEND_DIR = ROOT_DIR / "backend"
 sys.path.insert(0, str(BACKEND_DIR))
 
 import uvicorn
+import subprocess
 
 def get_local_ip() -> str:
     """Detects the active local Wi-Fi / LAN IP address."""
@@ -28,9 +29,29 @@ def get_local_ip() -> str:
     except Exception:
         return "127.0.0.1"
 
+def release_port_if_in_use(port: int):
+    """Detects and frees port if occupied by a zombie process on Windows."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            if s.connect_ex(("127.0.0.1", port)) != 0:
+                return  # Port is free
+        
+        # Port is occupied - find PID on Windows
+        cmd = f'powershell -NoProfile -Command "(Get-NetTCPConnection -LocalPort {port} -ErrorAction SilentlyContinue).OwningProcess"'
+        res = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        pids = [p.strip() for p in res.stdout.splitlines() if p.strip().isdigit()]
+        for pid in pids:
+            if int(pid) != os.getpid():
+                print(f"  ⚠️ Port {port} was occupied by old process (PID {pid}). Freeing port...")
+                subprocess.run(f"taskkill /F /PID {pid}", shell=True, capture_output=True)
+    except Exception:
+        pass
+
 if __name__ == "__main__":
     local_ip = get_local_ip()
     port = 8000
+
+    release_port_if_in_use(port)
 
     print("=" * 65)
     print("  वाणीसंशोधक (VaniScript) - Hindi Heritage OCR Platform")
