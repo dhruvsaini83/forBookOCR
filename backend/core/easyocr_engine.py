@@ -62,8 +62,12 @@ def get_easyocr_reader(languages: Optional[List[str]] = None, gpu: bool = False)
             use_gpu = gpu and torch.cuda.is_available()
             
             # Configure custom or default model storage directory
-            user_home = Path(os.environ.get("USERPROFILE", os.path.expanduser("~")))
-            model_dir = user_home / ".EasyOCR" / "model"
+            custom_model_dir = os.environ.get("EASYOCR_MODULE_PATH") or os.environ.get("EASYOCR_MODEL_DIR")
+            if custom_model_dir:
+                model_dir = Path(custom_model_dir)
+            else:
+                user_home = Path(os.environ.get("USERPROFILE", os.path.expanduser("~")))
+                model_dir = user_home / ".EasyOCR" / "model"
             model_dir.mkdir(parents=True, exist_ok=True)
             
             # Initialize reader with Hindi and English

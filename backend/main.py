@@ -283,6 +283,7 @@ def process_single_page_pipeline(doc_id: str, page_number: int, image_path: str,
 def favicon():
     return Response(content=b"", media_type="image/x-icon")
 
+@app.get("/health")
 @app.get("/api/health")
 def health_check():
     return {

@@ -25,11 +25,15 @@ def create_parchment_background(width: int, height: int) -> Image.Image:
     return Image.fromarray(arr)
 
 def get_hindi_font(size: int = 34):
-    """Loads Nirmala UI or standard Windows Devanagari font."""
+    """Loads Nirmala UI, standard Windows Devanagari font, or Debian Linux Devanagari fonts."""
     font_paths = [
         "C:/Windows/Fonts/Nirmala.ttc",
         "C:/Windows/Fonts/mangal.ttf",
-        "C:/Windows/Fonts/aparaj.ttf"
+        "C:/Windows/Fonts/aparaj.ttf",
+        "/usr/share/fonts/truetype/deva/Gargi.ttf",
+        "/usr/share/fonts/truetype/nakula/nakula.ttf",
+        "/usr/share/fonts/truetype/lohit-devanagari/Lohit-Devanagari.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSerif.ttf"
     ]
     for p in font_paths:
         if os.path.exists(p):

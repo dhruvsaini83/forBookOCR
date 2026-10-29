@@ -4,7 +4,11 @@ from pathlib import Path
 # Base Paths
 BASE_DIR = Path(__file__).resolve().parent.parent
 WORKSPACE_DIR = BASE_DIR.parent
-DATA_DIR = BASE_DIR / "storage"
+storage_env = os.environ.get("STORAGE_DIR") or os.environ.get("DATA_DIR")
+if storage_env:
+    DATA_DIR = Path(storage_env)
+else:
+    DATA_DIR = BASE_DIR / "storage"
 UPLOADS_DIR = DATA_DIR / "uploads"
 PROCESSED_DIR = DATA_DIR / "processed"
 EXPORTS_DIR = DATA_DIR / "exports"
@@ -22,11 +26,26 @@ LOCAL_TESSDATA = WORKSPACE_DIR / "tesseract" / "tessdata"
 if LOCAL_TESSERACT.exists():
     TESSERACT_CMD = str(LOCAL_TESSERACT)
     TESSDATA_DIR = str(LOCAL_TESSDATA)
+    os.environ["TESSDATA_PREFIX"] = TESSDATA_DIR
 else:
     TESSERACT_CMD = "tesseract"
-    TESSDATA_DIR = os.environ.get("TESSDATA_PREFIX", "")
-
-os.environ["TESSDATA_PREFIX"] = TESSDATA_DIR
+    env_tessdata = os.environ.get("TESSDATA_PREFIX")
+    if env_tessdata and Path(env_tessdata).exists():
+        TESSDATA_DIR = env_tessdata
+        os.environ["TESSDATA_PREFIX"] = env_tessdata
+    else:
+        # Check standard Linux/Debian tessdata paths
+        linux_paths = [
+            Path("/usr/share/tesseract-ocr/5/tessdata"),
+            Path("/usr/share/tesseract-ocr/4.00/tessdata"),
+            Path("/usr/share/tessdata"),
+        ]
+        found = next((p for p in linux_paths if p.exists()), None)
+        if found:
+            TESSDATA_DIR = str(found)
+            os.environ["TESSDATA_PREFIX"] = str(found)
+        else:
+            TESSDATA_DIR = ""
 
 # Verification Configuration Thresholds
 CONFIDENCE_HIGH_THRESHOLD = 82.0
