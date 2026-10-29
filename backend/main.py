@@ -9,7 +9,7 @@ from typing import Optional, List
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Query, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 import pymupdf as fitz
 from PIL import Image
 from pydantic import BaseModel
@@ -33,6 +33,7 @@ from core.stage5_consistency_checker import run_consistency_check
 from core.exporter import export_as_txt, export_as_docx, export_as_json, export_as_html_printable
 from core.benchmark import BENCHMARK_CASES, run_benchmark_evaluation
 from core.image_adjuster import detect_smart_crop, apply_image_adjustment, get_image_info
+from core.image_compressor import compress_image, get_file_sha256, verify_file_integrity
 from samples.sample_data import generate_samples
 
 class CropBoxInput(BaseModel):
@@ -47,6 +48,13 @@ class AdjustmentRequest(BaseModel):
     fine_rotation: float = 0.0
     apply_to_all_pages: bool = False
     run_ocr: bool = True
+
+class CompressionRequest(BaseModel):
+    mode: str = "smart"  # 'smart', 'lossless', 'high_quality', 'original'
+    max_dimension: Optional[int] = None
+    quality: int = 92
+    apply_to_all_pages: bool = False
+    run_ocr: bool = False
 
 app = FastAPI(
     title="वाणीसंशोधक API (VaniScript Heritage OCR)",
@@ -114,15 +122,22 @@ def process_single_page_pipeline(doc_id: str, page_number: int, image_path: str)
     page_id = f"{doc_id}_p{page_number}"
     db.update_page_status(doc_id, page_number, "PROCESSING")
     
-    # Check if an adjusted image exists for this page
+    # Priority: adjusted > optimized working derivative > raw original image
     doc_upload_dir = UPLOADS_DIR / doc_id
     adjusted_path = doc_upload_dir / f"page_{page_number}_adjusted.png"
+    optimized_path = doc_upload_dir / f"page_{page_number}_optimized.webp"
+    
+    adj_rel_url = None
+    opt_rel_url = to_safe_rel_url(str(optimized_path)) if optimized_path.exists() else None
+    p_sha256 = get_file_sha256(image_path) if Path(image_path).exists() else ""
+
     if adjusted_path.exists():
         target_path = str(adjusted_path)
         adj_rel_url = to_safe_rel_url(target_path)
+    elif optimized_path.exists():
+        target_path = str(optimized_path)
     else:
         target_path = image_path
-        adj_rel_url = None
 
     try:
         # Stage 1: Preprocessing & Quality Analysis
@@ -174,7 +189,9 @@ def process_single_page_pipeline(doc_id: str, page_number: int, image_path: str)
             word_tokens=final_tokens,
             stage_metrics=stage_metrics,
             status=page_status,
-            adjusted_img=adj_rel_url
+            adjusted_img=adj_rel_url,
+            original_sha256=p_sha256,
+            optimized_img=opt_rel_url
         )
         return qa_report["overall_status"]
     except TimeoutError as te:
@@ -220,6 +237,10 @@ def process_single_page_pipeline(doc_id: str, page_number: int, image_path: str)
 
 # --- API Endpoints ---
 
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    return Response(content=b"", media_type="image/x-icon")
+
 @app.get("/api/health")
 def health_check():
     return {
@@ -243,7 +264,8 @@ async def upload_document(
     file: UploadFile = File(...),
     title: Optional[str] = Form(None),
     collection_name: Optional[str] = Form("सामान्य (General)"),
-    auto_process: bool = Form(True)
+    auto_process: bool = Form(True),
+    compression_mode: Optional[str] = Form("smart")
 ):
     """
     Secure document upload with magic byte inspection, filename sanitization,
@@ -377,6 +399,41 @@ async def upload_document(
         provenance=provenance
     )
     
+    # Generate initial format-aware smart compression derivative for each page
+    comp_mode = (compression_mode or "smart").lower().strip()
+    for p_idx, p_path in enumerate(page_paths):
+        p_num = p_idx + 1
+        p_sha256 = get_file_sha256(p_path)
+        opt_path = doc_upload_dir / f"page_{p_num}_optimized.webp"
+        try:
+            comp_res = compress_image(str(p_path), str(opt_path), mode=comp_mode)
+            opt_url = to_safe_rel_url(str(opt_path))
+        except Exception:
+            comp_res = {}
+            opt_url = ""
+            
+        page_id = f"{doc_id}_p{p_num}"
+        orig_url = to_safe_rel_url(p_path)
+        db.save_page_result(
+            page_id=page_id,
+            doc_id=doc_id,
+            page_number=p_num,
+            original_img=orig_url,
+            preprocessed_img=opt_url or orig_url,
+            quality_metrics={},
+            raw_text="",
+            original_ocr_text="",
+            verified_text="",
+            reviewed_text="",
+            confirmed_text="",
+            word_tokens=[],
+            stage_metrics={},
+            status="PENDING_ADJUSTMENT" if not auto_process else "pending",
+            original_sha256=p_sha256,
+            optimized_img=opt_url,
+            compression_metadata=comp_res
+        )
+    
     if auto_process:
         # Process page 1 immediately for snappy feedback
         status_result = process_single_page_pipeline(doc_id, 1, page_paths[0])
@@ -389,28 +446,6 @@ async def upload_document(
                     process_single_page_pipeline(doc_id, p_num, page_paths[p_num - 1])
                     db.update_document_status(doc_id, DOC_STATUS_OCR_COMPLETE, processed_pages=p_num)
             background_tasks.add_task(process_remaining)
-    else:
-        # Initialize page entries in DB so client can access them for adjustment studio before OCR
-        for p_idx, p_path in enumerate(page_paths):
-            p_num = p_idx + 1
-            page_id = f"{doc_id}_p{p_num}"
-            orig_url = to_safe_rel_url(p_path)
-            db.save_page_result(
-                page_id=page_id,
-                doc_id=doc_id,
-                page_number=p_num,
-                original_img=orig_url,
-                preprocessed_img=orig_url,
-                quality_metrics={},
-                raw_text="",
-                original_ocr_text="",
-                verified_text="",
-                reviewed_text="",
-                confirmed_text="",
-                word_tokens=[],
-                stage_metrics={},
-                status="PENDING_ADJUSTMENT"
-            )
             
     return {
         "success": True,
@@ -444,17 +479,27 @@ def process_document(doc_id: str, page_number: Optional[int] = Query(None)):
     db.update_document_status(doc_id, DOC_STATUS_OCR_COMPLETE, verification_status=last_status, processed_pages=len(pages_to_process))
     return {"success": True, "document_id": doc_id, "status": last_status}
 
-def get_original_page_file(doc_upload_dir: Path, page_number: int) -> Optional[Path]:
-    """Finds original unadjusted source image for a given page."""
+def get_original_page_file(doc_upload_dir: Path, page_number: int, doc_id: Optional[str] = None) -> Optional[Path]:
+    """Finds original unadjusted source image for a given page, checking uploads and database paths."""
     for ext in (".png", ".jpg", ".jpeg", ".webp"):
         p = doc_upload_dir / f"page_{page_number}{ext}"
         if p.exists():
             return p
     candidates = [
         f for f in doc_upload_dir.glob(f"page_{page_number}.*")
-        if not f.name.endswith(("_adjusted.png", "_enhanced.png", "_binarized.png"))
+        if not f.name.endswith(("_adjusted.png", "_enhanced.png", "_binarized.png", "_optimized.webp"))
     ]
-    return candidates[0] if candidates else None
+    if candidates:
+        return candidates[0]
+        
+    if doc_id:
+        page = db.get_page_by_number(doc_id, page_number)
+        if page and page.get("original_image_path"):
+            clean_rel = page["original_image_path"].replace("/storage/", "").lstrip("/")
+            cand = DATA_DIR / clean_rel
+            if cand.exists():
+                return cand
+    return None
 
 @app.post("/api/documents/{doc_id}/pages/{page_number}/suggest-crop")
 def suggest_page_crop_endpoint(doc_id: str, page_number: int):
@@ -526,6 +571,22 @@ def adjust_page_image_endpoint(doc_id: str, page_number: int, req: AdjustmentReq
     
     db.update_page_adjustment(doc_id, page_number, to_safe_rel_url(str(target_out)), adj_metadata)
 
+    # Sync optimized derivative with adjusted content
+    opt_out = doc_upload_dir / f"page_{page_number}_optimized.webp"
+    try:
+        page_info = db.get_page_by_number(doc_id, page_number) or {}
+        prior_mode = (page_info.get("compression_metadata") or {}).get("mode", "smart")
+        comp_res = compress_image(str(target_out), str(opt_out), mode=prior_mode)
+        db.update_page_compression(
+            doc_id=doc_id,
+            page_number=page_number,
+            optimized_img=to_safe_rel_url(str(opt_out)),
+            compression_metadata=comp_res,
+            original_sha256=get_file_sha256(str(src_file))
+        )
+    except Exception:
+        pass
+
     # Replicate to other pages if apply_to_all_pages is requested
     if req.apply_to_all_pages and doc["total_pages"] > 1:
         for p in range(1, doc["total_pages"] + 1):
@@ -590,6 +651,151 @@ def reset_page_adjustment_endpoint(doc_id: str, page_number: int, run_ocr: bool 
         "document_id": doc_id,
         "page_number": page_number,
         "page": updated_page
+    }
+
+@app.post("/api/documents/{doc_id}/pages/{page_number}/compress")
+def compress_page_image_endpoint(doc_id: str, page_number: int, req: CompressionRequest):
+    """
+    Applies intelligent format-aware compression to the page working copy.
+    Maintains byte-for-byte archival integrity of original scan.
+    """
+    doc = db.get_document_by_id(doc_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found.")
+        
+    doc_upload_dir = UPLOADS_DIR / doc_id
+    src_file = get_original_page_file(doc_upload_dir, page_number)
+    if not src_file:
+        raise HTTPException(status_code=404, detail=f"Source image for page {page_number} not found.")
+        
+    adj_file = doc_upload_dir / f"page_{page_number}_adjusted.png"
+    working_source = adj_file if adj_file.exists() else src_file
+    
+    opt_out = doc_upload_dir / f"page_{page_number}_optimized.webp"
+    try:
+        comp_res = compress_image(
+            source_path=str(working_source),
+            output_path=str(opt_out),
+            mode=req.mode,
+            max_dimension=req.max_dimension,
+            quality=req.quality
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Image compression failed: {str(e)}")
+
+    original_sha256 = get_file_sha256(str(src_file))
+    db.update_page_compression(
+        doc_id=doc_id,
+        page_number=page_number,
+        optimized_img=to_safe_rel_url(str(opt_out)),
+        compression_metadata=comp_res,
+        original_sha256=original_sha256
+    )
+
+    # Multi-page replication if requested
+    if req.apply_to_all_pages and doc["total_pages"] > 1:
+        for p in range(1, doc["total_pages"] + 1):
+            if p == page_number:
+                continue
+            p_src = get_original_page_file(doc_upload_dir, p)
+            if p_src:
+                p_adj = doc_upload_dir / f"page_{p}_adjusted.png"
+                p_work = p_adj if p_adj.exists() else p_src
+                p_opt = doc_upload_dir / f"page_{p}_optimized.webp"
+                p_res = compress_image(
+                    source_path=str(p_work),
+                    output_path=str(p_opt),
+                    mode=req.mode,
+                    max_dimension=req.max_dimension,
+                    quality=req.quality
+                )
+                db.update_page_compression(
+                    doc_id=doc_id,
+                    page_number=p,
+                    optimized_img=to_safe_rel_url(str(p_opt)),
+                    compression_metadata=p_res,
+                    original_sha256=get_file_sha256(str(p_src))
+                )
+                if req.run_ocr:
+                    process_single_page_pipeline(doc_id, p, str(p_src))
+
+    if req.run_ocr:
+        process_single_page_pipeline(doc_id, page_number, str(src_file))
+        db.update_document_status(doc_id, DOC_STATUS_OCR_COMPLETE)
+
+    updated_page = db.get_page_by_number(doc_id, page_number)
+    return {
+        "success": True,
+        "document_id": doc_id,
+        "page_number": page_number,
+        "compression": comp_res,
+        "page": updated_page
+    }
+
+@app.get("/api/documents/{doc_id}/pages/{page_number}/compression-info")
+def get_page_compression_info_endpoint(doc_id: str, page_number: int):
+    """Returns detailed compression and archival integrity status for a page."""
+    doc = db.get_document_by_id(doc_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found.")
+        
+    doc_upload_dir = UPLOADS_DIR / doc_id
+    src_file = get_original_page_file(doc_upload_dir, page_number, doc_id=doc_id)
+    page = db.get_page_by_number(doc_id, page_number) or {}
+    meta = page.get("compression_metadata") or {}
+
+    if not src_file or not src_file.exists():
+        return {
+            "document_id": doc_id,
+            "page_number": page_number,
+            "is_original_intact": True,
+            "original_sha256": page.get("original_sha256", ""),
+            "expected_sha256": page.get("original_sha256", ""),
+            "original_size_bytes": 0,
+            "optimized_size_bytes": 0,
+            "bytes_saved": 0,
+            "savings_percent": 0.0,
+            "mode": meta.get("mode", "smart"),
+            "effective_mode": meta.get("effective_mode", "Smart Lossless WebP"),
+            "is_lossless": True,
+            "is_fallback": False,
+            "original_dimensions": [],
+            "compressed_dimensions": [],
+            "optimized_image_url": page.get("optimized_image_path") or page.get("original_image_path", "")
+        }
+
+    page = db.get_page_by_number(doc_id, page_number) or {}
+    meta = page.get("compression_metadata") or {}
+    
+    current_src_sha256 = get_file_sha256(str(src_file))
+    expected_sha256 = page.get("original_sha256") or meta.get("original_sha256") or current_src_sha256
+    is_intact = (current_src_sha256 == expected_sha256)
+    
+    opt_file = doc_upload_dir / f"page_{page_number}_optimized.webp"
+    has_opt = opt_file.exists()
+    
+    orig_size = os.path.getsize(str(src_file))
+    opt_size = os.path.getsize(str(opt_file)) if has_opt else orig_size
+    bytes_saved = max(0, orig_size - opt_size)
+    savings_pct = (bytes_saved / orig_size * 100.0) if orig_size > 0 else 0.0
+
+    return {
+        "document_id": doc_id,
+        "page_number": page_number,
+        "is_original_intact": is_intact,
+        "original_sha256": current_src_sha256,
+        "expected_sha256": expected_sha256,
+        "original_size_bytes": orig_size,
+        "optimized_size_bytes": opt_size,
+        "bytes_saved": bytes_saved,
+        "savings_percent": round(savings_pct, 2),
+        "mode": meta.get("mode", "smart"),
+        "effective_mode": meta.get("effective_mode", "Smart Lossless WebP"),
+        "is_lossless": meta.get("is_lossless", True),
+        "is_fallback": meta.get("is_fallback", False),
+        "original_dimensions": meta.get("original_dimensions", []),
+        "compressed_dimensions": meta.get("compressed_dimensions", []),
+        "optimized_image_url": to_safe_rel_url(str(opt_file)) if has_opt else page.get("original_image_path")
     }
 
 @app.get("/api/documents/{doc_id}/pages/{page_number}/status")

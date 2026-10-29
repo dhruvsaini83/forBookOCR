@@ -372,6 +372,8 @@ export const App: React.FC = () => {
                   originalUrl={currentPage.original_image_path}
                   enhancedUrl={currentPage.preprocessed_image_path}
                   adjustedUrl={currentPage.adjusted_image_path}
+                  optimizedUrl={currentPage.optimized_image_path}
+                  compressionMetadata={currentPage.compression_metadata}
                   tokens={currentPage.word_tokens}
                   selectedWordIndex={selectedWordIndex}
                   onSelectWord={handleWordSelect}

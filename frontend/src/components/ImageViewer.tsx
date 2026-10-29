@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
-import { ZoomIn, ZoomOut, RotateCw, Maximize2, Eye, EyeOff, ImageOff, Crop, Undo2 } from 'lucide-react';
-import type { WordToken } from '../types';
+import { ZoomIn, ZoomOut, RotateCw, Maximize2, Eye, EyeOff, ImageOff, Crop, Undo2, Zap } from 'lucide-react';
+import type { WordToken, CompressionMetadata } from '../types';
 import type { Language } from '../i18n/translations';
 import { translations } from '../i18n/translations';
 
@@ -8,6 +8,8 @@ interface ImageViewerProps {
   originalUrl: string;
   enhancedUrl: string;
   adjustedUrl?: string;
+  optimizedUrl?: string;
+  compressionMetadata?: CompressionMetadata;
   tokens: WordToken[];
   selectedWordIndex: number | null;
   onSelectWord: (index: number) => void;
@@ -20,6 +22,8 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
   originalUrl,
   enhancedUrl,
   adjustedUrl,
+  optimizedUrl,
+  compressionMetadata,
   tokens,
   selectedWordIndex,
   onSelectWord,
@@ -47,7 +51,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
     ? formatImgUrl(originalUrl)
     : activeVariant === 'adjusted' && adjustedUrl
     ? formatImgUrl(adjustedUrl)
-    : formatImgUrl(enhancedUrl);
+    : formatImgUrl(optimizedUrl || enhancedUrl);
 
   const handleZoomIn = () => setZoom((prev) => Math.min(Number((prev + 0.25).toFixed(2)), 4.0));
   const handleZoomOut = () => setZoom((prev) => Math.max(Number((prev - 0.25).toFixed(2)), 0.5));
@@ -154,6 +158,23 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
               <Undo2 className="w-3 h-3 text-stone-500" />
               <span>रीसेट</span>
             </button>
+          )}
+          {/* Optimization & Archival Badge */}
+          {compressionMetadata && (
+            <div 
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-50/80 border border-amber-200/70 text-amber-900 text-[11px] font-mono select-none"
+              title={`Original: ${(compressionMetadata.original_size_bytes / 1024).toFixed(0)} KB | Optimized: ${(compressionMetadata.compressed_size_bytes / 1024).toFixed(0)} KB | ${compressionMetadata.effective_mode}`}
+            >
+              <Zap className="w-3 h-3 text-amber-600 shrink-0" />
+              <span>
+                {compressionMetadata.savings_percent > 0 
+                  ? `-${compressionMetadata.savings_percent.toFixed(0)}%` 
+                  : 'Archival'}
+              </span>
+              <span className="text-[10px] text-amber-700/80 hidden xl:inline font-sans font-medium">
+                ({compressionMetadata.is_lossless ? 'Lossless' : 'Q92'})
+              </span>
+            </div>
           )}
         </div>
 

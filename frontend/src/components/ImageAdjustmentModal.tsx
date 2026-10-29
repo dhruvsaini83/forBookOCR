@@ -2,11 +2,12 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { 
   X, Crop, RotateCcw, RotateCw, RefreshCw, 
   Undo2, Redo2, Check, ZoomIn, ZoomOut, 
-  ChevronLeft, ChevronRight, Sliders, AlertCircle, Sparkles
+  ChevronLeft, ChevronRight, Sliders, AlertCircle, Sparkles,
+  Zap, CheckCircle2, Eye
 } from 'lucide-react';
 import type { Language } from '../i18n/translations';
 import { translations } from '../i18n/translations';
-import type { CropBox, ImageAdjustmentSettings } from '../types';
+import type { CropBox, ImageAdjustmentSettings, CompressionMode, CompressionInfoResponse } from '../types';
 import { api } from '../services/api';
 
 interface ImageAdjustmentModalProps {
@@ -69,6 +70,11 @@ export const ImageAdjustmentModal: React.FC<ImageAdjustmentModalProps> = ({
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // Compression & Quality State
+  const [compressionMode, setCompressionMode] = useState<CompressionMode>('smart');
+  const [compressionInfo, setCompressionInfo] = useState<CompressionInfoResponse | null>(null);
+  const [isCompressing, setIsCompressing] = useState<boolean>(false);
+
   // Dragging & Resizing State
   // handle: 'move' | 'nw' | 'ne' | 'se' | 'sw' | 'n' | 's' | 'e' | 'w' | null
   const [activeHandle, setActiveHandle] = useState<string | null>(null);
@@ -99,6 +105,53 @@ export const ImageAdjustmentModal: React.FC<ImageAdjustmentModalProps> = ({
     setErrorMessage(null);
     setIsImgLoaded(false);
   }, [isOpen, pageNumber, currentAdjustment]);
+
+  const fetchCompressionInfo = useCallback(async () => {
+    try {
+      const info = await api.getCompressionInfo(documentId, activePage);
+      setCompressionInfo(info);
+      if (info?.mode) {
+        setCompressionMode(info.mode);
+      }
+    } catch {
+      // ignore
+    }
+  }, [documentId, activePage]);
+
+  useEffect(() => {
+    if (isOpen) {
+      fetchCompressionInfo();
+    }
+  }, [isOpen, activePage, fetchCompressionInfo]);
+
+  const handleCompressionModeChange = async (newMode: CompressionMode) => {
+    setCompressionMode(newMode);
+    try {
+      setIsCompressing(true);
+      const res = await api.compressPage(documentId, activePage, {
+        mode: newMode,
+        run_ocr: false
+      });
+      if (res?.compression) {
+        setCompressionInfo((prev) => prev ? {
+          ...prev,
+          mode: newMode,
+          effective_mode: res.compression.effective_mode,
+          optimized_size_bytes: res.compression.compressed_size_bytes,
+          bytes_saved: res.compression.bytes_saved,
+          savings_percent: res.compression.savings_percent,
+          is_lossless: res.compression.is_lossless,
+          is_fallback: res.compression.is_fallback,
+        } : null);
+        setStatusMessage(t.compressionAppliedToast);
+        setTimeout(() => setStatusMessage(null), 3000);
+      }
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Compression failed');
+    } finally {
+      setIsCompressing(false);
+    }
+  };
 
   // Escape key handler
   useEffect(() => {
@@ -330,6 +383,17 @@ export const ImageAdjustmentModal: React.FC<ImageAdjustmentModalProps> = ({
       };
 
       await api.adjustImage(documentId, activePage, settings);
+      if (compressionMode) {
+        try {
+          await api.compressPage(documentId, activePage, {
+            mode: compressionMode,
+            apply_to_all_pages: applyToAllPages,
+            run_ocr: false
+          });
+        } catch {
+          // ignore
+        }
+      }
       await onApplySuccess(activePage);
       onClose();
     } catch (err: any) {
@@ -598,6 +662,75 @@ export const ImageAdjustmentModal: React.FC<ImageAdjustmentModalProps> = ({
             </button>
           </div>
         )}
+
+        {/* Smart Compression & Archival Preservation Strip */}
+        <div className="bg-stone-100/90 border-b border-stone-200 px-3 sm:px-6 py-2 flex flex-wrap items-center justify-between gap-2 text-xs font-devanagari">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="font-semibold text-stone-700 flex items-center gap-1 text-[11px] mr-1">
+              <Zap className="w-3.5 h-3.5 text-amber-600" />
+              {t.compressionTabTitle}:
+            </span>
+            {[
+              { id: 'smart' as CompressionMode, label: t.modeSmart },
+              { id: 'lossless' as CompressionMode, label: t.modeLossless },
+              { id: 'high_quality' as CompressionMode, label: t.modeHighQuality },
+              { id: 'original' as CompressionMode, label: t.modeOriginal },
+            ].map((m) => (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => handleCompressionModeChange(m.id)}
+                disabled={isCompressing || isApplying}
+                className={`px-2.5 py-1 rounded-lg border text-[11px] font-semibold transition-all inline-flex items-center gap-1 ${
+                  compressionMode === m.id
+                    ? 'bg-vedic-700 text-white border-vedic-700 shadow-2xs'
+                    : 'bg-white text-stone-700 border-stone-200 hover:bg-stone-50'
+                }`}
+              >
+                <span>{m.label}</span>
+                {compressionMode === m.id && isCompressing && (
+                  <RefreshCw className="w-2.5 h-2.5 animate-spin" />
+                )}
+              </button>
+            ))}
+          </div>
+
+          {/* Size & Savings metrics pills */}
+          {compressionInfo && (
+            <div className="flex items-center gap-2 text-[11px] font-mono shrink-0">
+              <div className="flex items-center gap-1.5 bg-white border border-stone-200 px-2 py-0.5 rounded-md text-stone-600">
+                <span>{(compressionInfo.original_size_bytes / 1024).toFixed(0)} KB</span>
+                <span className="text-stone-400">→</span>
+                <span className="font-bold text-stone-900">{(compressionInfo.optimized_size_bytes / 1024).toFixed(0)} KB</span>
+                {compressionInfo.savings_percent > 0 && (
+                  <span className="bg-emerald-100 text-emerald-800 font-bold px-1 py-0.2 rounded text-[10px]">
+                    -{compressionInfo.savings_percent.toFixed(1)}%
+                  </span>
+                )}
+              </div>
+
+              {compressionInfo.is_lossless && (
+                <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-800 border border-amber-200/80 px-2 py-0.5 rounded-md text-[10px] font-semibold">
+                  <CheckCircle2 className="w-3 h-3 text-amber-600" />
+                  {t.losslessGuaranteeBadge}
+                </span>
+              )}
+
+              {/* 100% Zoom toggle for pixel-level inspection */}
+              <button
+                type="button"
+                onClick={() => setZoom(zoom === 1 ? 1.8 : 1)}
+                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-semibold transition-colors ${
+                  zoom > 1 ? 'bg-amber-100 text-amber-900 border-amber-300' : 'bg-white text-stone-600 border-stone-200 hover:bg-stone-50'
+                }`}
+                title={t.compare100Zoom}
+              >
+                <Eye className="w-3 h-3 text-stone-600" />
+                <span>{zoom > 1 ? '1:1 Reset' : '100% Zoom'}</span>
+              </button>
+            </div>
+          )}
+        </div>
 
         {/* Central Preview & Crop Canvas */}
         <div 

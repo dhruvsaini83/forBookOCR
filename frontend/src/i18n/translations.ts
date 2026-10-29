@@ -86,6 +86,26 @@ export const translations = {
     adjustFailedToast: "चित्र समायोजन में त्रुटि हुई।",
     adjustBeforeOcrCheckbox: "अपलोड के बाद चित्र कांटें व घुमाएँ (समायोजन स्टूडियो)",
     
+    // Compression & Quality
+    compressionTabTitle: "संपीड़न और गुणवत्ता (Compression)",
+    compressionModeLabel: "गुणवत्ता मोड (Compression Mode)",
+    modeSmart: "स्मार्ट (सुझावित)",
+    modeSmartDesc: "मात्राओं एवं आकृतियों की सुरक्षा हेतु अनुकूलित संपीड़न।",
+    modeLossless: "पूर्णतः अपरिवर्तित (Lossless)",
+    modeLosslessDesc: "100% सटीक पिक्सेल मान, कोई विवरण हानि नहीं।",
+    modeHighQuality: "उच्च गुणवत्ता (High Quality)",
+    modeHighQualityDesc: "बारीक विवरण व मात्राओं को सुरक्षित रखते हुए अधिकतम संपीड़न।",
+    modeOriginal: "मूल संचिका (Original)",
+    modeOriginalDesc: "बिना किसी संपीड़न के मूल स्कैन का उपयोग करें।",
+    compressionStatsTitle: "आकार एवं संपीड़न विवरण",
+    originalSizeLabel: "मूल स्कैन आकार:",
+    compressedSizeLabel: "अनुकूलित आकार:",
+    savingsBadge: "बचत:",
+    losslessGuaranteeBadge: "✓ 100% पिक्सेल सुरक्षित (Lossless)",
+    archivalIntegrityBadge: "✓ मूल स्कैन SHA-256 सुरक्षित",
+    compare100Zoom: "100% ज़ूम पर तुलना करें",
+    compressionAppliedToast: "चित्र अनुकूलन सफलतापूर्वक लागू किया गया!",
+    
     // Text Editor & Verification
     copyVerifiedText: "सत्यापित पाठ कॉपी करें",
     copyRawText: "मूल OCR पाठ कॉपी करें",
@@ -234,6 +254,26 @@ export const translations = {
     adjustSuccessToast: "Image adjusted and OCR pipeline re-executed successfully!",
     adjustFailedToast: "Failed to adjust image.",
     adjustBeforeOcrCheckbox: "Adjust image before OCR (Crop & Rotate studio)",
+    
+    // Compression & Quality
+    compressionTabTitle: "Compression & Quality",
+    compressionModeLabel: "Compression Preset",
+    modeSmart: "Smart (Recommended)",
+    modeSmartDesc: "Format-aware compression preserving Devanagari matras.",
+    modeLossless: "Lossless (Bit-Perfect)",
+    modeLosslessDesc: "100% pixel preservation with zero information loss.",
+    modeHighQuality: "High Quality (Near-Lossless)",
+    modeHighQualityDesc: "High compression ratio while preserving sharp matras.",
+    modeOriginal: "Original Scan",
+    modeOriginalDesc: "Direct pass-through of the archival original scan.",
+    compressionStatsTitle: "File Size & Savings",
+    originalSizeLabel: "Original Scan Size:",
+    compressedSizeLabel: "Optimized Size:",
+    savingsBadge: "Saved:",
+    losslessGuaranteeBadge: "✓ 100% Bit-Perfect (Lossless)",
+    archivalIntegrityBadge: "✓ Archival SHA-256 Verified",
+    compare100Zoom: "Compare at 100% Zoom",
+    compressionAppliedToast: "Image optimization applied successfully!",
     
     // Text Editor & Verification
     copyVerifiedText: "Copy Verified Text",

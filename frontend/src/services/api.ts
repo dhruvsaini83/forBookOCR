@@ -1,4 +1,4 @@
-import type { DocumentData, PageData, CorrectionLog, BenchmarkCase, CropSuggestionResponse, ImageAdjustmentSettings } from '../types';
+import type { DocumentData, PageData, CorrectionLog, BenchmarkCase, CropSuggestionResponse, ImageAdjustmentSettings, CompressionMode, CompressionMetadata, CompressionInfoResponse } from '../types';
 
 const API_BASE = '/api';
 
@@ -8,12 +8,19 @@ export const api = {
     return res.json();
   },
 
-  async uploadDocument(file: File, title?: string, collection?: string, autoProcess = true): Promise<{ success: boolean; document_id: string; title: string; total_pages: number }> {
+  async uploadDocument(
+    file: File,
+    title?: string,
+    collection?: string,
+    autoProcess = true,
+    compressionMode: CompressionMode = 'smart'
+  ): Promise<{ success: boolean; document_id: string; title: string; total_pages: number }> {
     const formData = new FormData();
     formData.append('file', file);
     if (title) formData.append('title', title);
     if (collection) formData.append('collection_name', collection);
     formData.append('auto_process', autoProcess ? 'true' : 'false');
+    formData.append('compression_mode', compressionMode);
 
     const res = await fetch(`${API_BASE}/upload`, {
       method: 'POST',
@@ -119,6 +126,35 @@ export const api = {
       method: 'POST',
     });
     if (!res.ok) throw new Error('Failed to reset image adjustment');
+    return res.json();
+  },
+
+  async compressPage(
+    docId: string,
+    pageNumber: number,
+    settings: {
+      mode: CompressionMode;
+      max_dimension?: number;
+      quality?: number;
+      apply_to_all_pages?: boolean;
+      run_ocr?: boolean;
+    }
+  ): Promise<{ success: boolean; page: PageData; compression: CompressionMetadata }> {
+    const res = await fetch(`${API_BASE}/documents/${docId}/pages/${pageNumber}/compress`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settings),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Failed to compress image');
+    }
+    return res.json();
+  },
+
+  async getCompressionInfo(docId: string, pageNumber: number): Promise<CompressionInfoResponse> {
+    const res = await fetch(`${API_BASE}/documents/${docId}/pages/${pageNumber}/compression-info`);
+    if (!res.ok) throw new Error('Failed to fetch compression information');
     return res.json();
   },
 

@@ -93,7 +93,10 @@ def init_db():
         ("processed_at", "TEXT DEFAULT ''"),
         ("provenance_json", "TEXT DEFAULT '{}'"),
         ("adjusted_image_path", "TEXT DEFAULT ''"),
-        ("adjustment_metadata_json", "TEXT DEFAULT '{}'")
+        ("adjustment_metadata_json", "TEXT DEFAULT '{}'"),
+        ("original_sha256", "TEXT DEFAULT ''"),
+        ("optimized_image_path", "TEXT DEFAULT ''"),
+        ("compression_metadata_json", "TEXT DEFAULT '{}'")
     ]
     for col_name, col_def in migrations:
         if col_name not in page_cols:
@@ -221,7 +224,8 @@ def save_page_result(
     status: str = "completed", original_ocr_text: Optional[str] = None, reviewed_text: Optional[str] = None,
     confirmed_text: Optional[str] = None, error_code: str = "", error_message: str = "",
     retry_count: int = 0, provenance: Optional[dict] = None, adjusted_img: Optional[str] = None,
-    adjustment_metadata: Optional[dict] = None
+    adjustment_metadata: Optional[dict] = None, original_sha256: Optional[str] = None,
+    optimized_img: Optional[str] = None, compression_metadata: Optional[dict] = None
 ):
     now = datetime.now().isoformat()
     conn = get_db_connection()
@@ -232,17 +236,22 @@ def save_page_result(
     conf_text = confirmed_text if confirmed_text is not None else ""
     prov_json = json.dumps(provenance or {}, ensure_ascii=False)
     adj_meta_json = json.dumps(adjustment_metadata, ensure_ascii=False) if adjustment_metadata is not None else None
+    comp_meta_json = json.dumps(compression_metadata, ensure_ascii=False) if compression_metadata is not None else None
     
     cursor.execute("""
         INSERT OR REPLACE INTO pages 
         (id, document_id, page_number, original_image_path, preprocessed_image_path, 
          quality_metrics_json, raw_ocr_text, original_ocr_text, verified_text, reviewed_text, confirmed_text,
          word_tokens_json, stage_metrics_json, status, error_code, error_message, retry_count,
-         created_at, updated_at, processed_at, provenance_json, adjusted_image_path, adjustment_metadata_json)
+         created_at, updated_at, processed_at, provenance_json, adjusted_image_path, adjustment_metadata_json,
+         original_sha256, optimized_image_path, compression_metadata_json)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
                 COALESCE((SELECT created_at FROM pages WHERE id = ?), ?), ?, ?, ?,
                 COALESCE(?, (SELECT adjusted_image_path FROM pages WHERE id = ?), ''),
-                COALESCE(?, (SELECT adjustment_metadata_json FROM pages WHERE id = ?), '{}'))
+                COALESCE(?, (SELECT adjustment_metadata_json FROM pages WHERE id = ?), '{}'),
+                COALESCE(?, (SELECT original_sha256 FROM pages WHERE id = ?), ''),
+                COALESCE(?, (SELECT optimized_image_path FROM pages WHERE id = ?), ''),
+                COALESCE(?, (SELECT compression_metadata_json FROM pages WHERE id = ?), '{}'))
     """, (
         page_id, doc_id, page_number, original_img, preprocessed_img,
         json.dumps(quality_metrics, ensure_ascii=False),
@@ -253,7 +262,10 @@ def save_page_result(
         status, error_code, error_message, retry_count,
         page_id, now, now, now, prov_json,
         adjusted_img, page_id,
-        adj_meta_json, page_id
+        adj_meta_json, page_id,
+        original_sha256, page_id,
+        optimized_img, page_id,
+        comp_meta_json, page_id
     ))
     conn.commit()
     conn.close()
@@ -329,6 +341,7 @@ def get_page_by_number(doc_id: str, page_number: int) -> Optional[Dict[str, Any]
     d["stage_metrics"] = json.loads(d.get("stage_metrics_json") or "{}")
     d["provenance"] = json.loads(d.get("provenance_json") or "{}")
     d["adjustment_metadata"] = json.loads(d.get("adjustment_metadata_json") or "{}")
+    d["compression_metadata"] = json.loads(d.get("compression_metadata_json") or "{}")
     return d
 
 def get_all_pages_for_document(doc_id: str) -> List[Dict[str, Any]]:
@@ -345,8 +358,29 @@ def get_all_pages_for_document(doc_id: str) -> List[Dict[str, Any]]:
         d["stage_metrics"] = json.loads(d.get("stage_metrics_json") or "{}")
         d["provenance"] = json.loads(d.get("provenance_json") or "{}")
         d["adjustment_metadata"] = json.loads(d.get("adjustment_metadata_json") or "{}")
+        d["compression_metadata"] = json.loads(d.get("compression_metadata_json") or "{}")
         results.append(d)
     return results
+
+def update_page_compression(doc_id: str, page_number: int, optimized_img: str, compression_metadata: dict, original_sha256: Optional[str] = None):
+    now = datetime.now().isoformat()
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    sha_clause = ", original_sha256 = ?" if original_sha256 else ""
+    params = [optimized_img, json.dumps(compression_metadata, ensure_ascii=False), now]
+    if original_sha256:
+        params.append(original_sha256)
+    params.extend([doc_id, page_number])
+    cursor.execute(f"""
+        UPDATE pages
+        SET optimized_image_path = ?,
+            compression_metadata_json = ?,
+            updated_at = ?
+            {sha_clause}
+        WHERE document_id = ? AND page_number = ?
+    """, params)
+    conn.commit()
+    conn.close()
 
 def update_page_adjustment(doc_id: str, page_number: int, adjusted_img: str, adjustment_metadata: dict):
     now = datetime.now().isoformat()

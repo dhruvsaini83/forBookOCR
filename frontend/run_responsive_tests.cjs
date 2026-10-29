@@ -127,26 +127,16 @@ function isServerHealthy(url) {
       console.warn(`  Workspace toggle warning on ${vp.name}:`, e.message);
     }
 
-    // 4. Test Word Inspector Modal & Escape key
+    // 4. Test Dialog Modal & Escape key dismissal
     let modalTested = false;
     try {
-      // Switch to Text Editor view so word chips are visible and scrollable
-      const editorTab = page.locator('button:visible:has-text("देवनागरी पाठ")').first();
-      if (await editorTab.isVisible()) {
-        await editorTab.click();
-        await page.waitForTimeout(300);
-      }
-
-      // Click the first word token button inside text editor
-      const wordToken = page.locator('button[aria-label*="विश्वास"]').first();
-      if (await wordToken.isVisible()) {
-        await wordToken.scrollIntoViewIfNeeded();
-        await wordToken.click();
+      const uploadNavBtn = page.locator('button:visible:has-text("नया दस्तावेज़"), button:visible:has-text("Upload")').first();
+      if (await uploadNavBtn.isVisible()) {
+        await uploadNavBtn.click();
         await page.waitForTimeout(400);
 
         const modal = page.locator('div[role="dialog"]');
         if (await modal.isVisible()) {
-          // Capture modal view screenshot
           const modalShotPath = path.join(SCREENSHOTS_DIR, `${vp.name}_${vp.width}x${vp.height}_modal.png`);
           await page.screenshot({ path: modalShotPath, fullPage: true });
 

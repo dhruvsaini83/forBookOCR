@@ -113,6 +113,45 @@ export interface CropSuggestionResponse {
   coverage_ratio?: number;
 }
 
+export type CompressionMode = 'smart' | 'lossless' | 'high_quality' | 'original';
+
+export interface CompressionMetadata {
+  mode: CompressionMode;
+  effective_mode: string;
+  original_size_bytes: number;
+  compressed_size_bytes: number;
+  bytes_saved: number;
+  savings_percent: number;
+  original_format: string;
+  compressed_format: string;
+  original_dimensions: [number, number];
+  compressed_dimensions: [number, number];
+  original_sha256: string;
+  compressed_sha256: string;
+  is_lossless: boolean;
+  is_fallback: boolean;
+  applied_at: string;
+}
+
+export interface CompressionInfoResponse {
+  document_id: string;
+  page_number: number;
+  is_original_intact: boolean;
+  original_sha256: string;
+  expected_sha256: string;
+  original_size_bytes: number;
+  optimized_size_bytes: number;
+  bytes_saved: number;
+  savings_percent: number;
+  mode: CompressionMode;
+  effective_mode: string;
+  is_lossless: boolean;
+  is_fallback: boolean;
+  original_dimensions: [number, number];
+  compressed_dimensions: [number, number];
+  optimized_image_url: string;
+}
+
 export interface PageData {
   id: string;
   document_id: string;
@@ -121,6 +160,9 @@ export interface PageData {
   preprocessed_image_path: string;
   adjusted_image_path?: string;
   adjustment_metadata?: ImageAdjustmentSettings;
+  optimized_image_path?: string;
+  compression_metadata?: CompressionMetadata;
+  original_sha256?: string;
   quality_metrics: QualityMetrics;
   raw_ocr_text: string;
   original_ocr_text?: string;
