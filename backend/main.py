@@ -1017,10 +1017,20 @@ def select_page_engine_endpoint(doc_id: str, page_number: int, req: SelectEngine
     stage_metrics["stage5"] = qa_report
     stage_metrics["selected_engine"] = engine
     
-    db.update_page_verified_text(doc_id, page_number, chosen_text, mark_confirmed=False, text_version="reviewed")
+    qa_status = "COMPLETED" if qa_report.get("overall_status") == "Verified by Available Checks" else "NEEDS_REVIEW"
+    db.update_page_verified_text(
+        doc_id=doc_id,
+        page_number=page_number,
+        verified_text=final_verified_text,
+        mark_confirmed=False,
+        text_version="reviewed",
+        word_tokens=final_tokens,
+        stage_metrics=stage_metrics,
+        qa_status=qa_status
+    )
     
     # Save correction audit log
-    db.save_correction_log(
+    db.log_correction(
         doc_id=doc_id,
         page_number=page_number,
         word_index=0,

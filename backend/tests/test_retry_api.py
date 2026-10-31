@@ -102,3 +102,28 @@ def test_multiple_sequential_retries_increments_counter(sample_failed_document):
     res2 = client.post(f"/api/documents/{doc_id}/pages/1/retry")
     assert res2.status_code == 200
     assert db.get_page_status(doc_id, 1)["retry_count"] == 2
+
+def test_select_page_engine_tesseract_and_easyocr(sample_failed_document):
+    doc_id = sample_failed_document
+    # 1. Select Tesseract
+    res_tess = client.post(
+        f"/api/documents/{doc_id}/pages/1/select-engine",
+        json={"engine": "tesseract", "selected_text": "श्री रामचरितमानस अवधी पाठ"}
+    )
+    assert res_tess.status_code == 200
+    assert res_tess.json()["success"] is True
+    assert res_tess.json()["selected_engine"] == "tesseract"
+    
+    # 2. Select EasyOCR
+    res_easy = client.post(
+        f"/api/documents/{doc_id}/pages/1/select-engine",
+        json={"engine": "easyocr"}
+    )
+    assert res_easy.status_code == 200
+    assert res_easy.json()["success"] is True
+    assert res_easy.json()["selected_engine"] == "easyocr"
+    
+    # Verify DB state
+    page = db.get_page_by_number(doc_id, 1)
+    assert page["ocr_engine"] == "easyocr"
+

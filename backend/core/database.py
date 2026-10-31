@@ -438,6 +438,50 @@ def select_preferred_ocr_engine(
     conn.commit()
     conn.close()
 
+def update_page_verified_text(
+    doc_id: str,
+    page_number: int,
+    verified_text: str,
+    mark_confirmed: bool = False,
+    text_version: str = "reviewed",
+    word_tokens: Optional[list] = None,
+    stage_metrics: Optional[dict] = None,
+    qa_status: Optional[str] = None
+):
+    """Updates verified/reviewed text, word tokens, and stage metrics for a page."""
+    now = datetime.now().isoformat()
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    set_clauses = ["verified_text = ?", "reviewed_text = ?"]
+    params = [verified_text, verified_text]
+
+    if mark_confirmed:
+        set_clauses.append("confirmed_text = ?")
+        params.append(verified_text)
+
+    if word_tokens is not None:
+        set_clauses.append("word_tokens_json = ?")
+        params.append(json.dumps(word_tokens, ensure_ascii=False))
+
+    if stage_metrics is not None:
+        set_clauses.append("stage_metrics_json = ?")
+        params.append(json.dumps(stage_metrics, ensure_ascii=False))
+
+    if qa_status:
+        set_clauses.append("status = ?")
+        params.append(qa_status)
+
+    set_clauses.append("updated_at = ?")
+    params.append(now)
+
+    params.extend([doc_id, page_number])
+
+    query = f"UPDATE pages SET {', '.join(set_clauses)} WHERE document_id = ? AND page_number = ?"
+    cursor.execute(query, tuple(params))
+    conn.commit()
+    conn.close()
+
 def update_page_compression(doc_id: str, page_number: int, optimized_img: str, compression_metadata: dict, original_sha256: Optional[str] = None):
     now = datetime.now().isoformat()
     conn = get_db_connection()
@@ -496,6 +540,8 @@ def log_correction(doc_id: str, page_number: int, word_index: int, original_text
     """, (doc_id, page_number, word_index, original_text, corrected_text, reason, now))
     conn.commit()
     conn.close()
+
+save_correction_log = log_correction
 
 def get_correction_logs(doc_id: str) -> List[Dict[str, Any]]:
     conn = get_db_connection()
