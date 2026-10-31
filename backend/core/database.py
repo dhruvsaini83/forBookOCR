@@ -103,6 +103,9 @@ def init_db():
         ("easyocr_text", "TEXT DEFAULT ''"),
         ("easyocr_tokens_json", "TEXT DEFAULT '[]'"),
         ("easyocr_metrics_json", "TEXT DEFAULT '{}'"),
+        ("paddleocr_text", "TEXT DEFAULT ''"),
+        ("paddleocr_tokens_json", "TEXT DEFAULT '[]'"),
+        ("paddleocr_metrics_json", "TEXT DEFAULT '{}'"),
         ("comparison_data_json", "TEXT DEFAULT '{}'")
     ]
     for col_name, col_def in migrations:
@@ -351,6 +354,8 @@ def get_page_by_number(doc_id: str, page_number: int) -> Optional[Dict[str, Any]
     d["compression_metadata"] = json.loads(d.get("compression_metadata_json") or "{}")
     d["easyocr_tokens"] = json.loads(d.get("easyocr_tokens_json") or "[]")
     d["easyocr_metrics"] = json.loads(d.get("easyocr_metrics_json") or "{}")
+    d["paddleocr_tokens"] = json.loads(d.get("paddleocr_tokens_json") or "[]")
+    d["paddleocr_metrics"] = json.loads(d.get("paddleocr_metrics_json") or "{}")
     d["comparison_data"] = json.loads(d.get("comparison_data_json") or "{}")
     return d
 
@@ -371,6 +376,8 @@ def get_all_pages_for_document(doc_id: str) -> List[Dict[str, Any]]:
         d["compression_metadata"] = json.loads(d.get("compression_metadata_json") or "{}")
         d["easyocr_tokens"] = json.loads(d.get("easyocr_tokens_json") or "[]")
         d["easyocr_metrics"] = json.loads(d.get("easyocr_metrics_json") or "{}")
+        d["paddleocr_tokens"] = json.loads(d.get("paddleocr_tokens_json") or "[]")
+        d["paddleocr_metrics"] = json.loads(d.get("paddleocr_metrics_json") or "{}")
         d["comparison_data"] = json.loads(d.get("comparison_data_json") or "{}")
         results.append(d)
     return results
@@ -381,7 +388,10 @@ def update_page_ocr_comparison(
     comparison_data: dict,
     easyocr_text: str = "",
     easyocr_tokens: Optional[list] = None,
-    easyocr_metrics: Optional[dict] = None
+    easyocr_metrics: Optional[dict] = None,
+    paddleocr_text: str = "",
+    paddleocr_tokens: Optional[list] = None,
+    paddleocr_metrics: Optional[dict] = None
 ):
     """Stores head-to-head comparison results and EasyOCR raw output without modifying original Tesseract text."""
     now = datetime.now().isoformat()
@@ -393,6 +403,9 @@ def update_page_ocr_comparison(
             easyocr_text = ?,
             easyocr_tokens_json = ?,
             easyocr_metrics_json = ?,
+            paddleocr_text = ?,
+            paddleocr_tokens_json = ?,
+            paddleocr_metrics_json = ?,
             updated_at = ?
         WHERE document_id = ? AND page_number = ?
     """, (
@@ -400,6 +413,9 @@ def update_page_ocr_comparison(
         easyocr_text,
         json.dumps(easyocr_tokens or [], ensure_ascii=False),
         json.dumps(easyocr_metrics or {}, ensure_ascii=False),
+        paddleocr_text,
+        json.dumps(paddleocr_tokens or [], ensure_ascii=False),
+        json.dumps(paddleocr_metrics or {}, ensure_ascii=False),
         now,
         doc_id,
         page_number

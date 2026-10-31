@@ -201,7 +201,7 @@ export const App: React.FC = () => {
   };
 
   const selectedWordToken: WordToken | null = 
-    currentPage && selectedWordIndex !== null && currentPage.word_tokens[selectedWordIndex]
+    currentPage && selectedWordIndex !== null && currentPage.word_tokens?.[selectedWordIndex]
       ? currentPage.word_tokens[selectedWordIndex]
       : null;
 
@@ -376,7 +376,7 @@ export const App: React.FC = () => {
                   adjustedUrl={currentPage.adjusted_image_path}
                   optimizedUrl={currentPage.optimized_image_path}
                   compressionMetadata={currentPage.compression_metadata}
-                  tokens={currentPage.word_tokens}
+                  tokens={currentPage.word_tokens || []}
                   selectedWordIndex={selectedWordIndex}
                   onSelectWord={handleWordSelect}
                   onOpenAdjustment={() => setIsAdjustmentOpen(true)}
@@ -394,7 +394,7 @@ export const App: React.FC = () => {
                   verifiedText={currentPage.verified_text}
                   rawText={currentPage.raw_ocr_text}
                   confirmedText={currentPage.confirmed_text}
-                  tokens={currentPage.word_tokens}
+                  tokens={currentPage.word_tokens || []}
                   selectedWordIndex={selectedWordIndex}
                   onSelectWord={handleWordSelect}
                   onSaveFullText={handleSaveFullText}

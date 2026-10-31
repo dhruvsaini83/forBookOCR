@@ -303,7 +303,10 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
             />
 
             {/* Word Bounding Boxes Layer */}
-            {showBboxes && tokens.map((tok) => {
+            {showBboxes && Array.isArray(tokens) && tokens.map((tok) => {
+              if (!tok?.bbox || !Array.isArray(tok.bbox) || tok.bbox.length < 4) {
+                return null;
+              }
               const [x, y, w, h] = tok.bbox;
               const leftPct = (x / naturalDimensions.width) * 100;
               const topPct = (y / naturalDimensions.height) * 100;

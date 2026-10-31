@@ -211,7 +211,7 @@ export const api = {
     return handleResponse(res, 'Failed to fetch comparison details');
   },
 
-  async selectPreferredEngine(docId: string, pageNumber: number, engine: 'tesseract' | 'easyocr', selectedText?: string) {
+  async selectPreferredEngine(docId: string, pageNumber: number, engine: 'tesseract' | 'easyocr' | 'paddleocr', selectedText?: string) {
     const res = await fetch(`${API_BASE}/documents/${docId}/pages/${pageNumber}/select-engine`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

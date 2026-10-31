@@ -187,6 +187,7 @@ export interface ComparisonData {
   similarity_ratio: number;
   tesseract: EngineComparisonResult;
   easyocr: EngineComparisonResult;
+  paddleocr?: EngineComparisonResult;
   diff: {
     word_diffs: WordDiffItem[];
     differing_blocks_count: number;
@@ -197,6 +198,7 @@ export interface ComparisonData {
     speedup_factor: number;
     tesseract_time_ms: number;
     easyocr_time_ms: number;
+    paddleocr_time_ms?: number;
     better_cer_engine?: string | null;
     cer_margin?: number | null;
   };
@@ -217,6 +219,9 @@ export interface PageData {
   easyocr_text?: string;
   easyocr_tokens?: WordToken[];
   easyocr_metrics?: Record<string, any>;
+  paddleocr_text?: string;
+  paddleocr_tokens?: WordToken[];
+  paddleocr_metrics?: Record<string, any>;
   comparison_data?: ComparisonData;
   quality_metrics: QualityMetrics;
   raw_ocr_text: string;

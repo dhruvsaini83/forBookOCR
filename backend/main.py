@@ -42,10 +42,11 @@ from core.image_compressor import (
 )
 from samples.sample_data import generate_samples
 from core.easyocr_engine import is_easyocr_available, run_easyocr
+from core.paddleocr_engine import is_paddleocr_available, run_paddleocr
 from core.ocr_comparison import compare_ocr_engines
 
 class SelectEngineRequest(BaseModel):
-    engine: str  # "tesseract" | "easyocr"
+    engine: str  # "tesseract" | "easyocr" | "paddleocr"
     selected_text: Optional[str] = None
 
 class CompareOcrRequest(BaseModel):
@@ -166,6 +167,11 @@ def process_single_page_pipeline(doc_id: str, page_number: int, image_path: str,
             stage2_res = run_easyocr(enhanced_path, timeout=TESSERACT_TIMEOUT_SECONDS)
             stage3_tokens = stage2_res["word_tokens"]
             stage3_metrics = {"engine": "EasyOCR Pass", "skipped_tesseract_cross": True}
+        elif engine == "paddleocr":
+            # Stage 2: PaddleOCR Devanagari Extraction
+            stage2_res = run_paddleocr(enhanced_path, timeout=TESSERACT_TIMEOUT_SECONDS)
+            stage3_tokens = stage2_res["word_tokens"]
+            stage3_metrics = {"engine": "PaddleOCR Pass", "skipped_tesseract_cross": True}
         elif engine == "compare":
             # Compare both engines head-to-head on the identical enhanced image
             comparison_res = compare_ocr_engines(enhanced_path)
@@ -235,7 +241,10 @@ def process_single_page_pipeline(doc_id: str, page_number: int, image_path: str,
                 comparison_data=comparison_res,
                 easyocr_text=comparison_res["easyocr"]["text"],
                 easyocr_tokens=comparison_res["easyocr"]["tokens"],
-                easyocr_metrics=comparison_res["easyocr"]["metrics"]
+                easyocr_metrics=comparison_res["easyocr"]["metrics"],
+                paddleocr_text=comparison_res.get("paddleocr", {}).get("text", ""),
+                paddleocr_tokens=comparison_res.get("paddleocr", {}).get("tokens", []),
+                paddleocr_metrics=comparison_res.get("paddleocr", {}).get("metrics", {})
             )
             
         return qa_report["overall_status"]
@@ -493,7 +502,7 @@ async def upload_document(
         )
     
     chosen_engine = (ocr_engine or "tesseract").lower().strip()
-    if chosen_engine not in ("tesseract", "easyocr", "compare"):
+    if chosen_engine not in ("tesseract", "easyocr", "paddleocr", "compare"):
         chosen_engine = "tesseract"
 
     if auto_process:
@@ -873,6 +882,7 @@ def get_page_compression_info_endpoint(doc_id: str, page_number: int):
 def get_available_engines_endpoint():
     """Returns available local OCR engines and hardware capabilities."""
     easy_avail, easy_info = is_easyocr_available()
+    paddle_avail, paddle_info = is_paddleocr_available()
     return {
         "default_engine": "tesseract",
         "engines": [
@@ -890,6 +900,16 @@ def get_available_engines_endpoint():
                 "languages": ["hi", "en"],
                 "available": easy_avail,
                 "version": easy_info,
+
+                "device": "CPU"
+            },
+            {
+                "id": "paddleocr",
+                "name": "PaddleOCR PP-OCRv5 (Devanagari)",
+                "languages": ["hi", "sa", "Devanagari"],
+                "available": paddle_avail,
+                "version": paddle_info,
+
                 "device": "CPU"
             }
         ]
@@ -934,7 +954,10 @@ def compare_page_ocr_endpoint(doc_id: str, page_number: int, req: Optional[Compa
         comparison_data=comparison_res,
         easyocr_text=comparison_res["easyocr"]["text"],
         easyocr_tokens=comparison_res["easyocr"]["tokens"],
-        easyocr_metrics=comparison_res["easyocr"]["metrics"]
+        easyocr_metrics=comparison_res["easyocr"]["metrics"],
+        paddleocr_text=comparison_res.get("paddleocr", {}).get("text", ""),
+        paddleocr_tokens=comparison_res.get("paddleocr", {}).get("tokens", []),
+        paddleocr_metrics=comparison_res.get("paddleocr", {}).get("metrics", {})
     )
     
     return comparison_res
@@ -954,6 +977,7 @@ def get_page_comparison_endpoint(doc_id: str, page_number: int):
         "ocr_engine": page.get("ocr_engine", "tesseract"),
         "tesseract_text": page.get("raw_ocr_text", ""),
         "easyocr_text": page.get("easyocr_text", ""),
+        "paddleocr_text": page.get("paddleocr_text", ""),
         "comparison": comp_data
     }
 
@@ -968,8 +992,8 @@ def select_page_engine_endpoint(doc_id: str, page_number: int, req: SelectEngine
         raise HTTPException(status_code=404, detail=f"Page {page_number} not found.")
         
     engine = req.engine.lower().strip()
-    if engine not in ("tesseract", "easyocr"):
-        raise HTTPException(status_code=400, detail="Invalid engine. Must be 'tesseract' or 'easyocr'.")
+    if engine not in ("tesseract", "easyocr", "paddleocr"):
+        raise HTTPException(status_code=400, detail="Invalid engine. Must be 'tesseract', 'easyocr', or 'paddleocr'.")
 
     doc_upload_dir = UPLOADS_DIR / doc_id
     src_file = get_original_page_file(doc_upload_dir, page_number, doc_id=doc_id)
@@ -988,6 +1012,13 @@ def select_page_engine_endpoint(doc_id: str, page_number: int, req: SelectEngine
             easy_res = run_easyocr(str(working_img))
             chosen_text = easy_res["full_text"]
             chosen_tokens = easy_res["word_tokens"]
+    elif engine == "paddleocr":
+        chosen_text = page.get("paddleocr_text", "")
+        chosen_tokens = page.get("paddleocr_tokens", [])
+        if not chosen_text and working_img:
+            paddle_res = run_paddleocr(str(working_img))
+            chosen_text = paddle_res["full_text"]
+            chosen_tokens = paddle_res["word_tokens"]
     else:
         chosen_text = page.get("raw_ocr_text", "") or page.get("original_ocr_text", "")
         chosen_tokens = page.get("word_tokens", [])

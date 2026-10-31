@@ -25,7 +25,7 @@ export const TextEditor: React.FC<TextEditorProps> = ({
   verifiedText,
   rawText,
   confirmedText = '',
-  tokens,
+  tokens = [],
   selectedWordIndex,
   onSelectWord,
   onSaveFullText,
@@ -78,7 +78,7 @@ export const TextEditor: React.FC<TextEditorProps> = ({
   };
 
   // Find flagged tokens indices
-  const flaggedIndices = tokens
+  const flaggedIndices = (tokens || [])
     .map((tok, idx) => {
       const isDisagreement = Boolean(tok.disagreement_type || tok.flags?.includes('DISAGREEMENT') || tok.flags?.includes('STAGE3_DISAGREEMENT'));
       const isAnomaly = Boolean((tok.unicode_anomalies && tok.unicode_anomalies.length > 0) || tok.flags?.includes('UNICODE_WARNING'));
@@ -102,8 +102,8 @@ export const TextEditor: React.FC<TextEditorProps> = ({
   const isFailed = pageStatus === 'FAILED';
 
   const displayedTokens = filterFlaggedOnly 
-    ? tokens.filter((tok) => flaggedIndices.includes(tok.index))
-    : tokens;
+    ? (tokens || []).filter((tok) => flaggedIndices.includes(tok.index))
+    : (tokens || []);
 
   return (
     <div className="flex flex-col h-full bg-white rounded-2xl border border-stone-200/90 overflow-hidden shadow-2xs">

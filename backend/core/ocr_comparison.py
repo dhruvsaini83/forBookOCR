@@ -2,6 +2,7 @@ import difflib
 from typing import Dict, Any, Optional, List
 from core.stage2_ocr import run_primary_ocr
 from core.easyocr_engine import run_easyocr
+from core.paddleocr_engine import is_paddleocr_available, run_paddleocr
 from core.benchmark import calculate_cer, calculate_wer
 
 def compute_word_diffs(text1: str, text2: str) -> List[Dict[str, Any]]:
@@ -29,11 +30,16 @@ def compute_word_diffs(text1: str, text2: str) -> List[Dict[str, Any]]:
 
 def compare_ocr_engines(
     image_path: str,
-    ground_truth: Optional[str] = None
+    ground_truth: Optional[str] = None,
+    include_paddle: bool = True
 ) -> Dict[str, Any]:
     """
-    Fair, head-to-head comparison between Tesseract LSTM and EasyOCR Devanagari.
-    Processes the exact same input image, stores results separately, and computes
+    Fair, head-to-head comparison between OCR engines on the identical image:
+    1. Tesseract LSTM (hin+san)
+    2. EasyOCR Devanagari (CRAFT + ResNet/LSTM)
+    3. PaddleOCR PP-OCRv5 (Devanagari mobile) [when available]
+    
+    Processes the exact same input image, stores raw outputs separately, and computes
     timing, character counts, word diffs, and CER/WER (when ground truth is available).
     """
     # 1. Execute Tesseract
@@ -68,55 +74,97 @@ def compare_ocr_engines(
         easy_tokens = []
         easy_time = 0.0
 
-    # 3. Text and Word Counts
+    # 3. Execute PaddleOCR (optional / on-demand)
+    paddle_error = None
+    paddle_text = ""
+    paddle_metrics: Dict[str, Any] = {}
+    paddle_tokens: List[Dict[str, Any]] = []
+    paddle_time = 0.0
+    
+    if include_paddle:
+        paddle_avail, paddle_info = is_paddleocr_available()
+        if paddle_avail:
+            try:
+                paddle_res = run_paddleocr(image_path)
+                paddle_text = paddle_res.get("full_text", "")
+                paddle_metrics = paddle_res.get("metrics", {})
+                paddle_tokens = paddle_res.get("word_tokens", [])
+                paddle_time = paddle_metrics.get("processing_time_ms", 0.0)
+            except Exception as e:
+                paddle_error = f"{type(e).__name__}: {str(e)}"
+        else:
+            paddle_error = f"PaddleOCR not installed: {paddle_info}"
+
+    # 4. Text and Word Counts
     tess_char_count = len(tess_text.replace(" ", "").replace("\n", ""))
     easy_char_count = len(easy_text.replace(" ", "").replace("\n", ""))
+    paddle_char_count = len(paddle_text.replace(" ", "").replace("\n", ""))
     
     tess_word_count = len(tess_text.split())
     easy_word_count = len(easy_text.split())
+    paddle_word_count = len(paddle_text.split())
     
-    # 4. Compute Word Diff & Similarity
+    # 5. Compute Word Diff & Similarity (Tesseract vs EasyOCR base)
     similarity = difflib.SequenceMatcher(None, tess_text, easy_text).ratio()
     word_diffs = compute_word_diffs(tess_text, easy_text)
     
-    # 5. Measure CER & WER against ground truth if provided
+    # 6. Measure CER & WER against ground truth if provided
     has_ground_truth = bool(ground_truth and ground_truth.strip())
     tess_cer = None
     tess_wer = None
     easy_cer = None
     easy_wer = None
+    paddle_cer = None
+    paddle_wer = None
     better_cer_engine = None
     cer_margin = None
     
-    if has_ground_truth and not tess_error and not easy_error:
+    if has_ground_truth:
         gt_clean = ground_truth.strip()
-        tess_cer = calculate_cer(gt_clean, tess_text)
-        tess_wer = calculate_wer(gt_clean, tess_text)
-        
-        easy_cer = calculate_cer(gt_clean, easy_text)
-        easy_wer = calculate_wer(gt_clean, easy_text)
-        
-        if tess_cer < easy_cer:
-            better_cer_engine = "tesseract"
-            cer_margin = round(easy_cer - tess_cer, 2)
-        elif easy_cer < tess_cer:
-            better_cer_engine = "easyocr"
-            cer_margin = round(tess_cer - easy_cer, 2)
-        else:
-            better_cer_engine = "tied"
-            cer_margin = 0.0
+        if not tess_error and tess_text:
+            tess_cer = calculate_cer(gt_clean, tess_text)
+            tess_wer = calculate_wer(gt_clean, tess_text)
+        if not easy_error and easy_text:
+            easy_cer = calculate_cer(gt_clean, easy_text)
+            easy_wer = calculate_wer(gt_clean, easy_text)
+        if not paddle_error and paddle_text:
+            paddle_cer = calculate_cer(gt_clean, paddle_text)
+            paddle_wer = calculate_wer(gt_clean, paddle_text)
 
-    # 6. Timing comparison
-    if tess_time > 0 and easy_time > 0:
-        faster_engine = "tesseract" if tess_time < easy_time else "easyocr"
-        slower_time = max(tess_time, easy_time)
-        faster_time = min(tess_time, easy_time)
+        # Determine best CER among available engines
+        active_cers = {}
+        if tess_cer is not None:
+            active_cers["tesseract"] = tess_cer
+        if easy_cer is not None:
+            active_cers["easyocr"] = easy_cer
+        if paddle_cer is not None:
+            active_cers["paddleocr"] = paddle_cer
+
+        if active_cers:
+            best_engine = min(active_cers, key=active_cers.get)
+            worst_cer = max(active_cers.values())
+            better_cer_engine = best_engine
+            cer_margin = round(worst_cer - active_cers[best_engine], 2)
+
+    # 7. Timing comparison
+    active_times = {}
+    if tess_time > 0 and not tess_error:
+        active_times["tesseract"] = tess_time
+    if easy_time > 0 and not easy_error:
+        active_times["easyocr"] = easy_time
+    if paddle_time > 0 and not paddle_error:
+        active_times["paddleocr"] = paddle_time
+
+    if active_times:
+        faster_engine = min(active_times, key=active_times.get)
+        slower_time = max(active_times.values())
+        faster_time = min(active_times.values())
         speedup = round(slower_time / max(0.1, faster_time), 2)
     else:
         faster_engine = "unknown"
         speedup = 1.0
 
-    return {
+    result = {
         "image_path": image_path,
         "has_ground_truth": has_ground_truth,
         "similarity_ratio": round(similarity * 100, 1),
@@ -144,6 +192,18 @@ def compare_ocr_engines(
             "wer": easy_wer,
             "error": easy_error
         },
+        "paddleocr": {
+            "name": "PaddleOCR PP-OCRv5 (Devanagari)",
+            "text": paddle_text,
+            "char_count": paddle_char_count,
+            "word_count": paddle_word_count,
+            "processing_time_ms": paddle_time,
+            "tokens": paddle_tokens,
+            "metrics": paddle_metrics,
+            "cer": paddle_cer,
+            "wer": paddle_wer,
+            "error": paddle_error
+        },
         "diff": {
             "word_diffs": word_diffs,
             "differing_blocks_count": sum(1 for d in word_diffs if d["tag"] != "equal"),
@@ -154,8 +214,10 @@ def compare_ocr_engines(
             "speedup_factor": speedup,
             "tesseract_time_ms": tess_time,
             "easyocr_time_ms": easy_time,
+            "paddleocr_time_ms": paddle_time,
             "better_cer_engine": better_cer_engine,
             "cer_margin": cer_margin
         }
     }
-
+    
+    return result
