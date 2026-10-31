@@ -132,9 +132,11 @@ def to_safe_rel_url(p: str) -> str:
     except Exception:
         return f"/storage/processed/{Path(p).name}"
 
-def process_single_page_pipeline(doc_id: str, page_number: int, image_path: str, engine: str = "tesseract") -> str:
+def process_single_page_pipeline(doc_id: str, page_number: int, image_path: str, engine: str = "tesseract", retry_count: Optional[int] = None) -> str:
     """Executes the verification pipeline for a single page with error containment and engine selection."""
     page_id = f"{doc_id}_p{page_number}"
+    existing_page_status = db.get_page_status(doc_id, page_number)
+    current_retry = retry_count if retry_count is not None else (existing_page_status.get("retry_count", 0) if existing_page_status else 0)
     db.update_page_status(doc_id, page_number, "PROCESSING")
     
     # Priority: adjusted > optimized working derivative > raw original image
@@ -221,7 +223,8 @@ def process_single_page_pipeline(doc_id: str, page_number: int, image_path: str,
             status=page_status,
             adjusted_img=adj_rel_url,
             original_sha256=p_sha256,
-            optimized_img=opt_rel_url
+            optimized_img=opt_rel_url,
+            retry_count=current_retry
         )
         
         # If comparison was executed, save it into the page record
@@ -1042,6 +1045,50 @@ def get_page_status_endpoint(doc_id: str, page_number: int):
     if not status_info:
         raise HTTPException(status_code=404, detail=f"Status for page {page_number} not found.")
     return status_info
+
+@app.post("/api/documents/{doc_id}/pages/{page_number}/retry")
+def retry_page_endpoint(doc_id: str, page_number: int, engine: Optional[str] = Query(None)):
+    """Retries OCR processing for a specific page, incrementing the retry counter."""
+    doc = db.get_document_by_id(doc_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found.")
+
+    doc_upload_dir = UPLOADS_DIR / doc_id
+    if not doc_upload_dir.exists():
+        raise HTTPException(status_code=404, detail="Document storage directory not found.")
+
+    src_img = get_original_page_file(doc_upload_dir, page_number, doc_id=doc_id)
+    if not src_img or not src_img.exists():
+        candidates = list(doc_upload_dir.glob(f"page_{page_number}.*"))
+        if candidates:
+            src_img = candidates[0]
+        else:
+            raise HTTPException(status_code=404, detail=f"Source image for page {page_number} not found.")
+
+    # Increment retry counter
+    existing = db.get_page_status(doc_id, page_number)
+    prev_retry = existing.get("retry_count", 0) if existing else 0
+    new_retry = prev_retry + 1
+    db.update_page_status(doc_id, page_number, "RETRYING", increment_retry=True)
+
+    # Determine OCR engine
+    chosen_engine = engine or doc.get("provenance", {}).get("ocr_engine", "tesseract")
+    if isinstance(chosen_engine, str) and "easyocr" in chosen_engine.lower():
+        engine_name = "easyocr"
+    else:
+        engine_name = "tesseract"
+
+    # Re-run OCR pipeline
+    status = process_single_page_pipeline(doc_id, page_number, str(src_img), engine=engine_name, retry_count=new_retry)
+    db.update_document_status(doc_id, DOC_STATUS_OCR_COMPLETE, verification_status=status)
+
+    return {
+        "success": True,
+        "document_id": doc_id,
+        "page_number": page_number,
+        "status": status,
+        "ocr_engine": engine_name
+    }
 
 @app.get("/api/documents/{doc_id}/unresolved")
 def get_document_unresolved(doc_id: str):
