@@ -72,4 +72,4 @@ USER user
 EXPOSE 8000
 
 # Launch FastAPI server bound to 0.0.0.0 and dynamic port ($PORT or default 8000)
-CMD ["sh", "-c", "uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["sh", "-c", "uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000} --timeout-keep-alive 75"]

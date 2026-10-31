@@ -283,8 +283,8 @@ def process_single_page_pipeline(doc_id: str, page_number: int, image_path: str,
 def favicon():
     return Response(content=b"", media_type="image/x-icon")
 
-@app.get("/health")
-@app.get("/api/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
+@app.api_route("/api/health", methods=["GET", "HEAD"])
 def health_check():
     return {
         "status": "healthy",
@@ -1292,7 +1292,7 @@ FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
 if FRONTEND_DIST.exists():
     app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIST / "assets")), name="assets")
 
-    @app.get("/{full_path:path}")
+    @app.api_route("/{full_path:path}", methods=["GET", "HEAD"])
     def serve_frontend_spa(full_path: str):
         if full_path.startswith("api/") or full_path.startswith("storage/"):
             raise HTTPException(status_code=404, detail="Not found")
