@@ -3,6 +3,7 @@ import { X, UploadCloud, Camera, FileText, Sparkles, AlertCircle, FileCheck2, Sh
 import type { Language } from '../i18n/translations';
 import { translations } from '../i18n/translations';
 import type { CompressionMode, OcrEngine } from '../types';
+import { api } from '../services/api';
 
 interface UploadModalProps {
   isOpen: boolean;
@@ -81,27 +82,17 @@ export const UploadModal: React.FC<UploadModalProps> = ({
     try {
       setIsUploading(true);
       setError(null);
-      const formData = new FormData();
-      formData.append('file', file);
-      if (title) formData.append('title', title);
-      formData.append('collection_name', collection);
-      formData.append('compression_mode', compressionMode);
-      formData.append('ocr_engine', ocrEngine);
       const shouldAutoProcess = !adjustBeforeOcr && autoProcess;
-      formData.append('auto_process', shouldAutoProcess ? 'true' : 'false');
 
-      const backendUrl = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
-      const res = await fetch(`${backendUrl}/api/upload`, {
-        method: 'POST',
-        body: formData,
-      });
+      const data = await api.uploadDocument(
+        file,
+        title || undefined,
+        collection,
+        shouldAutoProcess,
+        compressionMode,
+        ocrEngine
+      );
 
-      if (!res.ok) {
-        const errData = await res.json();
-        throw new Error(errData.detail || 'Upload failed');
-      }
-
-      const data = await res.json();
       onUploadSuccess(data.document_id, adjustBeforeOcr);
       onClose();
     } catch (err: any) {

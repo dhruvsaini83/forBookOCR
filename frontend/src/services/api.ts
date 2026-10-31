@@ -1,4 +1,16 @@
-import type { DocumentData, PageData, CorrectionLog, BenchmarkCase, CropSuggestionResponse, ImageAdjustmentSettings, CompressionMode, CompressionMetadata, CompressionInfoResponse, OcrEngine, ComparisonData } from '../types';
+import type {
+  DocumentData,
+  PageData,
+  CorrectionLog,
+  BenchmarkCase,
+  CropSuggestionResponse,
+  ImageAdjustmentSettings,
+  CompressionMode,
+  CompressionMetadata,
+  CompressionInfoResponse,
+  OcrEngine,
+  ComparisonData
+} from '../types';
 
 export const BACKEND_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 const API_BASE = `${BACKEND_URL}/api`;
@@ -10,10 +22,40 @@ export const getStorageUrl = (path: string): string => {
   return `${BACKEND_URL}${cleanPath}`;
 };
 
+/**
+ * Robust JSON response handler that prevents "Unexpected end of JSON input"
+ * or "Unexpected token '<'" crashes on empty/HTML responses.
+ */
+async function handleResponse<T = any>(res: Response, defaultError = 'Request failed'): Promise<T> {
+  const text = await res.text();
+  let json: any = null;
+  if (text) {
+    try {
+      json = JSON.parse(text);
+    } catch {
+      json = null;
+    }
+  }
+
+  if (!res.ok) {
+    const errorMsg = json?.detail || json?.message || (text && text.length < 200 ? text : null);
+    throw new Error(errorMsg || `${defaultError} (HTTP ${res.status})`);
+  }
+
+  if (json === null) {
+    if (res.status === 204 || !text.trim()) {
+      return {} as T;
+    }
+    throw new Error('Server returned an invalid or non-JSON response');
+  }
+
+  return json as T;
+}
+
 export const api = {
   async getHealth() {
     const res = await fetch(`${API_BASE}/health`);
-    return res.json();
+    return handleResponse(res, 'Health check failed');
   },
 
   async uploadDocument(
@@ -36,11 +78,7 @@ export const api = {
       method: 'POST',
       body: formData,
     });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.detail || 'Upload failed');
-    }
-    return res.json();
+    return handleResponse(res, 'Upload failed');
   },
 
   async processDocument(docId: string, pageNumber?: number) {
@@ -48,8 +86,7 @@ export const api = {
       ? `${API_BASE}/process/${docId}?page_number=${pageNumber}`
       : `${API_BASE}/process/${docId}`;
     const res = await fetch(url, { method: 'POST' });
-    if (!res.ok) throw new Error('Processing failed');
-    return res.json();
+    return handleResponse(res, 'Processing failed');
   },
 
   async listDocuments(search?: string, collection?: string): Promise<{ documents: DocumentData[]; count: number }> {
@@ -57,19 +94,17 @@ export const api = {
     if (search) params.append('search', search);
     if (collection) params.append('collection', collection);
     const res = await fetch(`${API_BASE}/documents?${params.toString()}`);
-    return res.json();
+    return handleResponse(res, 'Failed to fetch documents');
   },
 
   async getDocument(docId: string): Promise<{ document: DocumentData; pages: PageData[]; correction_logs: CorrectionLog[] }> {
     const res = await fetch(`${API_BASE}/documents/${docId}`);
-    if (!res.ok) throw new Error('Document not found');
-    return res.json();
+    return handleResponse(res, 'Document not found');
   },
 
   async getPage(docId: string, pageNumber: number): Promise<PageData> {
     const res = await fetch(`${API_BASE}/documents/${docId}/pages/${pageNumber}`);
-    if (!res.ok) throw new Error('Page not found');
-    return res.json();
+    return handleResponse(res, 'Page not found');
   },
 
   async updateWord(docId: string, pageNumber: number, wordIndex: number, correctedText: string, reason = 'manual_correction') {
@@ -78,7 +113,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ word_index: wordIndex, corrected_text: correctedText, reason }),
     });
-    return res.json();
+    return handleResponse(res, 'Failed to update word');
   },
 
   async updatePageText(docId: string, pageNumber: number, verifiedText: string, markConfirmed = false, textVersion = 'reviewed') {
@@ -87,35 +122,31 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ verified_text: verifiedText, mark_confirmed: markConfirmed, text_version: textVersion }),
     });
-    return res.json();
+    return handleResponse(res, 'Failed to update page text');
   },
 
   async retryPage(docId: string, pageNumber: number) {
     const res = await fetch(`${API_BASE}/documents/${docId}/pages/${pageNumber}/retry`, {
       method: 'POST',
     });
-    if (!res.ok) throw new Error('Failed to retry page processing');
-    return res.json();
+    return handleResponse(res, 'Failed to retry page processing');
   },
 
   async getPageStatus(docId: string, pageNumber: number) {
     const res = await fetch(`${API_BASE}/documents/${docId}/pages/${pageNumber}/status`);
-    if (!res.ok) throw new Error('Failed to fetch page status');
-    return res.json();
+    return handleResponse(res, 'Failed to fetch page status');
   },
 
   async getDocumentUnresolved(docId: string) {
     const res = await fetch(`${API_BASE}/documents/${docId}/unresolved`);
-    if (!res.ok) throw new Error('Failed to fetch unresolved details');
-    return res.json();
+    return handleResponse(res, 'Failed to fetch unresolved details');
   },
 
   async suggestCrop(docId: string, pageNumber: number): Promise<CropSuggestionResponse> {
     const res = await fetch(`${API_BASE}/documents/${docId}/pages/${pageNumber}/suggest-crop`, {
       method: 'POST',
     });
-    if (!res.ok) throw new Error('Failed to fetch smart crop suggestion');
-    return res.json();
+    return handleResponse(res, 'Failed to fetch smart crop suggestion');
   },
 
   async adjustImage(docId: string, pageNumber: number, settings: ImageAdjustmentSettings): Promise<{ success: boolean; page: PageData; adjustment: any }> {
@@ -124,19 +155,14 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(settings),
     });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || 'Failed to adjust image');
-    }
-    return res.json();
+    return handleResponse(res, 'Failed to adjust image');
   },
 
   async resetAdjustment(docId: string, pageNumber: number, runOcr = true): Promise<{ success: boolean; page: PageData }> {
     const res = await fetch(`${API_BASE}/documents/${docId}/pages/${pageNumber}/reset-adjustment?run_ocr=${runOcr}`, {
       method: 'POST',
     });
-    if (!res.ok) throw new Error('Failed to reset image adjustment');
-    return res.json();
+    return handleResponse(res, 'Failed to reset image adjustment');
   },
 
   async compressPage(
@@ -155,17 +181,12 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(settings),
     });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || 'Failed to compress image');
-    }
-    return res.json();
+    return handleResponse(res, 'Failed to compress image');
   },
 
   async getCompressionInfo(docId: string, pageNumber: number): Promise<CompressionInfoResponse> {
     const res = await fetch(`${API_BASE}/documents/${docId}/pages/${pageNumber}/compression-info`);
-    if (!res.ok) throw new Error('Failed to fetch compression information');
-    return res.json();
+    return handleResponse(res, 'Failed to fetch compression information');
   },
 
   async comparePageOcr(docId: string, pageNumber: number, groundTruth?: string): Promise<ComparisonData> {
@@ -174,11 +195,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ground_truth: groundTruth || null }),
     });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || 'Failed to compare OCR engines');
-    }
-    return res.json();
+    return handleResponse(res, 'Failed to compare OCR engines');
   },
 
   async getPageComparison(docId: string, pageNumber: number): Promise<{
@@ -191,8 +208,7 @@ export const api = {
     comparison: ComparisonData;
   }> {
     const res = await fetch(`${API_BASE}/documents/${docId}/pages/${pageNumber}/comparison`);
-    if (!res.ok) throw new Error('Failed to fetch comparison details');
-    return res.json();
+    return handleResponse(res, 'Failed to fetch comparison details');
   },
 
   async selectPreferredEngine(docId: string, pageNumber: number, engine: 'tesseract' | 'easyocr', selectedText?: string) {
@@ -201,21 +217,17 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ engine, selected_text: selectedText || null }),
     });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || 'Failed to select preferred engine');
-    }
-    return res.json();
+    return handleResponse(res, 'Failed to select preferred engine');
   },
 
   async getOcrEngines() {
     const res = await fetch(`${API_BASE}/ocr/engines`);
-    return res.json();
+    return handleResponse(res, 'Failed to fetch OCR engines');
   },
 
   async deleteDocument(docId: string) {
     const res = await fetch(`${API_BASE}/documents/${docId}`, { method: 'DELETE' });
-    return res.json();
+    return handleResponse(res, 'Failed to delete document');
   },
 
   getExportUrl(docId: string, format: 'txt' | 'docx' | 'json' | 'html', textVersion: 'reviewed' | 'confirmed' | 'original_ocr' = 'reviewed') {
@@ -224,18 +236,17 @@ export const api = {
 
   async listSamples(): Promise<{ samples: Array<{ id: string; title: string; filename: string; collection: string; desc: string }> }> {
     const res = await fetch(`${API_BASE}/samples`);
-    return res.json();
+    return handleResponse(res, 'Failed to list samples');
   },
 
   async loadSample(sampleId: string): Promise<{ success: boolean; document_id: string; title: string }> {
     const res = await fetch(`${API_BASE}/samples/load/${sampleId}`, { method: 'POST' });
-    if (!res.ok) throw new Error('Failed to load sample');
-    return res.json();
+    return handleResponse(res, 'Failed to load sample');
   },
 
   async getBenchmarks(): Promise<{ benchmarks: BenchmarkCase[] }> {
     const res = await fetch(`${API_BASE}/benchmark`);
-    return res.json();
+    return handleResponse(res, 'Failed to fetch benchmarks');
   },
 
   async evaluateBenchmark(caseId: string, extractedText: string) {
@@ -246,6 +257,6 @@ export const api = {
       method: 'POST',
       body: formData,
     });
-    return res.json();
+    return handleResponse(res, 'Failed to evaluate benchmark');
   }
 };
