@@ -1,4 +1,9 @@
 import type {
+  BookData,
+  CreateBookPayload,
+  UpdateBookPayload,
+  DashboardMetrics,
+  MissingPagesReport,
   DocumentData,
   PageData,
   CorrectionLog,
@@ -258,5 +263,105 @@ export const api = {
       body: formData,
     });
     return handleResponse(res, 'Failed to evaluate benchmark');
-  }
+  },
+
+  async listBooks(status?: string, search?: string): Promise<{ success: boolean; books: BookData[]; total_books: number; dashboard_metrics: DashboardMetrics }> {
+    const params = new URLSearchParams();
+    if (status) params.append('status', status);
+    if (search) params.append('search', search);
+    const res = await fetch(`${API_BASE}/books?${params.toString()}`);
+    return handleResponse(res, 'Failed to fetch books');
+  },
+
+  async getBook(bookId: string): Promise<{ success: boolean; book: BookData; dashboard_metrics: DashboardMetrics }> {
+    const res = await fetch(`${API_BASE}/books/${bookId}`);
+    return handleResponse(res, 'Failed to fetch book');
+  },
+
+  async createBook(payload: CreateBookPayload): Promise<{ success: boolean; book: BookData; dashboard_metrics: DashboardMetrics }> {
+    const res = await fetch(`${API_BASE}/books`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return handleResponse(res, 'Failed to create book');
+  },
+
+  async updateBook(bookId: string, payload: UpdateBookPayload): Promise<{ success: boolean; book: BookData; dashboard_metrics: DashboardMetrics }> {
+    const res = await fetch(`${API_BASE}/books/${bookId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return handleResponse(res, 'Failed to update book');
+  },
+
+  async deleteBook(bookId: string, confirm = true): Promise<{ success: boolean; message: string; deleted_pages_count: number; dashboard_metrics: DashboardMetrics }> {
+    const res = await fetch(`${API_BASE}/books/${bookId}?confirm=${confirm}`, {
+      method: 'DELETE'
+    });
+    return handleResponse(res, 'Failed to delete book');
+  },
+
+  async getDashboardMetrics(): Promise<{ success: boolean; dashboard_metrics: DashboardMetrics }> {
+    const res = await fetch(`${API_BASE}/dashboard/metrics`);
+    return handleResponse(res, 'Failed to fetch dashboard metrics');
+  },
+  async getMissingPages(bookId: string, upToTotal = false): Promise<MissingPagesReport> {
+    const res = await fetch(`${API_BASE}/books/${bookId}/missing-pages?up_to_total=${upToTotal}`);
+    return handleResponse(res, 'Failed to fetch missing pages report');
+  },
+
+  async reorderBookPages(bookId: string, orderedPageIds: string[]): Promise<{ success: boolean; book_id: string; reordered_count: number; pages: PageData[] }> {
+    const res = await fetch(`${API_BASE}/books/${bookId}/pages/reorder`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ordered_page_ids: orderedPageIds }),
+    });
+    return handleResponse(res, 'Failed to reorder book pages');
+  },
+
+  async getBookPages(bookId: string, sortBy = 'upload_order'): Promise<{ success: boolean; pages: PageData[]; total_pages: number }> {
+    const res = await fetch(`${API_BASE}/books/${bookId}/pages?sort_by=${sortBy}`);
+    return handleResponse(res, 'Failed to fetch book pages');
+  },
+
+  async deletePage(pageId: string, confirmDeleteOriginal = false): Promise<{ success: boolean; message: string; original_image_deleted: boolean }> {
+    const res = await fetch(`${API_BASE}/pages/${pageId}?confirm_delete_original=${confirmDeleteOriginal}`, {
+      method: 'DELETE',
+    });
+    return handleResponse(res, 'Failed to delete page');
+  },
+
+  async replacePageImage(pageId: string, file: File, autoProcess = true, ocrEngine = 'tesseract'): Promise<{ success: boolean; page_id: string; archived_path: string; new_image_url: string; status: string; page: PageData }> {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('auto_process', String(autoProcess));
+    formData.append('ocr_engine', ocrEngine);
+    const res = await fetch(`${API_BASE}/pages/${pageId}/replace`, {
+      method: 'POST',
+      body: formData,
+    });
+    return handleResponse(res, 'Failed to replace page image');
+  },
+  async checkBookDuplicates(bookId: string, threshold = 8): Promise<{
+    success: boolean;
+    book_id: string;
+    book_name: string;
+    total_scanned_pages: number;
+    duplicate_pairs_count: number;
+    has_duplicates: boolean;
+    threshold: number;
+    duplicate_pairs: Array<{
+      page1: { id: string; page_number: number; upload_order: number; preview_url: string; phash: string };
+      page2: { id: string; page_number: number; upload_order: number; preview_url: string; phash: string };
+      hamming_distance: number;
+      similarity_percentage: number;
+    }>;
+  }> {
+    const res = await fetch(`${API_BASE}/books/${bookId}/check-duplicates?threshold=${threshold}`, {
+      method: 'POST'
+    });
+    return handleResponse(res, 'Failed to check duplicates');
+  },
 };

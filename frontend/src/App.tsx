@@ -14,6 +14,7 @@ import { BenchmarkModal } from './components/BenchmarkModal';
 import { ExportModal } from './components/ExportModal';
 import { ImageAdjustmentModal } from './components/ImageAdjustmentModal';
 import { ComparisonModal } from './components/ComparisonModal';
+import { Books } from './pages/Books';
 import type { Language } from './i18n/translations';
 import { translations } from './i18n/translations';
 import type { DocumentData, PageData, WordToken } from './types';
@@ -36,6 +37,14 @@ export const App: React.FC = () => {
     failed_pages_count: number;
     pages: any[];
   } | null>(null);
+
+  // Top-level Navigation View ('scanner' | 'books')
+  const [currentView, setCurrentView] = useState<'scanner' | 'books'>(() => {
+    if (typeof window !== 'undefined' && window.location.pathname.startsWith('/books')) {
+      return 'books';
+    }
+    return 'scanner';
+  });
 
   // Responsive Workspace Mode ('split' | 'image' | 'text')
   const [workspaceMode, setWorkspaceMode] = useState<'split' | 'image' | 'text'>('split');
@@ -96,6 +105,30 @@ export const App: React.FC = () => {
       setIsLoading(false);
     }
   };
+
+  // Browser history & custom navigation listener
+  useEffect(() => {
+    const handlePopState = () => {
+      if (typeof window !== 'undefined' && window.location.pathname.startsWith('/books')) {
+        setCurrentView('books');
+      } else {
+        setCurrentView('scanner');
+      }
+    };
+
+    const handleCustomNav = (e: any) => {
+      if (e.detail?.path?.startsWith('/books')) {
+        setCurrentView('books');
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    window.addEventListener('app:navigate', handleCustomNav);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      window.removeEventListener('app:navigate', handleCustomNav);
+    };
+  }, []);
 
   // Initial Load: Fetch samples and load the first historical document
   useEffect(() => {
@@ -216,11 +249,49 @@ export const App: React.FC = () => {
         onOpenHistory={() => setIsHistoryOpen(true)}
         onOpenBenchmark={() => setIsBenchmarkOpen(true)}
         onOpenSamples={() => setIsUploadOpen(true)}
+        onOpenBooks={() => {
+          const nextView = currentView === 'books' ? 'scanner' : 'books';
+          setCurrentView(nextView);
+          if (typeof window !== 'undefined') {
+            window.history.pushState({}, '', nextView === 'books' ? '/books' : '/');
+          }
+        }}
+        activeView={currentView}
         activeDocTitle={currentDoc?.title}
       />
 
-      {/* Main Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 flex flex-col gap-4 sm:gap-6">
+      {/* View Switcher: Books Management vs OCR Scanner Workspace */}
+      {currentView === 'books' ? (
+        <Books
+          lang={lang}
+          onNavigateHome={() => {
+            setCurrentView('scanner');
+            if (typeof window !== 'undefined') {
+              window.history.pushState({}, '', '/');
+            }
+          }}
+          onSelectBook={async (bookId) => {
+            try {
+              setIsLoading(true);
+              const res = await api.getBook(bookId);
+              if (res.book && res.book.pages && res.book.pages.length > 0) {
+                const firstPage = res.book.pages[0];
+                await loadDocument(firstPage.document_id, firstPage.page_number);
+                setCurrentView('scanner');
+              } else {
+                alert(lang === 'hi' 
+                  ? `ग्रन्थ '${res.book.name}' में अभी कोई पृष्ठ संलग्न नहीं हैं। कृपया नया दस्तावेज़ अपलोड कर इसे ग्रन्थ से जोड़ें।`
+                  : `Book '${res.book.name}' has no pages attached yet. Please upload pages and assign them to this book.`);
+              }
+            } catch (err: any) {
+              console.error('Failed to open book pages:', err);
+            } finally {
+              setIsLoading(false);
+            }
+          }}
+        />
+      ) : (
+        <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 flex flex-col gap-4 sm:gap-6">
         {/* Document Subheader & Page Navigation */}
         {currentDoc && (
           <div className="flex flex-wrap items-center justify-between gap-3 sm:gap-4 p-3.5 sm:p-4 rounded-2xl bg-white border border-stone-200/90 shadow-2xs">
@@ -443,6 +514,7 @@ export const App: React.FC = () => {
           />
         )}
       </main>
+      )}
 
       {/* Footer */}
       <footer className="mt-auto border-t border-stone-200 bg-white py-5 sm:py-6 text-center text-xs text-stone-500 font-devanagari">

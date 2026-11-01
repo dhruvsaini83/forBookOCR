@@ -44,6 +44,21 @@ from samples.sample_data import generate_samples
 from core.easyocr_engine import is_easyocr_available, run_easyocr
 from core.paddleocr_engine import is_paddleocr_available, run_paddleocr
 from core.ocr_comparison import compare_ocr_engines
+from utils.duplicate_detector import (
+    compute_phash,
+    check_duplicate_in_book,
+    scan_book_for_duplicates,
+    compute_hamming_distance,
+    DUPLICATE_HAMMING_THRESHOLD
+)
+from file_manager import (
+    split_pdf_to_page_images,
+    save_image_to_originals,
+    detect_missing_pages,
+    list_existing_original_page_numbers,
+    replace_page_image_with_archive,
+    delete_original_image_file
+)
 
 class SelectEngineRequest(BaseModel):
     engine: str  # "tesseract" | "easyocr" | "paddleocr"
@@ -104,6 +119,41 @@ class PageTextUpdateRequest(BaseModel):
 class DocumentUpdateRequest(BaseModel):
     title: Optional[str] = None
     collection_name: Optional[str] = None
+
+class CreateBookRequest(BaseModel):
+    name: str
+    description: Optional[str] = None
+    language: Optional[str] = "hin"
+    total_pages: Optional[int] = 400
+    cover_image_url: Optional[str] = None
+
+class UpdateBookRequest(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    language: Optional[str] = None
+    total_pages: Optional[int] = None
+    cover_image_url: Optional[str] = None
+    status: Optional[str] = None  # 'draft', 'in_progress', 'completed'
+
+
+class BuilderAddPagesRequest(BaseModel):
+    page_ids: List[str]
+
+class BuilderRemovePageRequest(BaseModel):
+    page_id: str
+
+class BuilderReorderRequest(BaseModel):
+    ordered_page_numbers: List[int]
+
+class BuilderEditTextRequest(BaseModel):
+    combined_text: str
+
+class ReorderPagesRequest(BaseModel):
+    ordered_page_ids: List[str]
+
+class AssignPagesToBookRequest(BaseModel):
+    document_id: Optional[str] = None
+    page_numbers: Optional[List[int]] = None
 
 # Validation and Sanitization Helpers
 def validate_file_magic(header: bytes, ext: str) -> bool:
@@ -321,7 +371,10 @@ async def upload_document(
     collection_name: Optional[str] = Form("सामान्य (General)"),
     auto_process: bool = Form(True),
     compression_mode: Optional[str] = Form("smart"),
-    ocr_engine: Optional[str] = Form("tesseract")
+    ocr_engine: Optional[str] = Form("tesseract"),
+    book_id: Optional[str] = Form(None),
+    start_page_number: Optional[int] = Form(None),
+    duplicate_action: Optional[str] = Form("check")
 ):
     """
     Secure document upload with magic byte inspection, filename sanitization,
@@ -383,56 +436,191 @@ async def upload_document(
         
     file_sha256 = hasher.hexdigest()
     page_paths = []
+    page_items = []
     
-    if ext in ALLOWED_PDF_EXTENSIONS:
-        try:
-            pdf_doc = fitz.open(str(source_file_path))
-            total_pages = len(pdf_doc)
-            if total_pages == 0:
-                pdf_doc.close()
-                shutil.rmtree(doc_upload_dir, ignore_errors=True)
-                raise HTTPException(status_code=400, detail="The PDF file contains no pages.")
-            if total_pages > MAX_PDF_PAGES:
-                pdf_doc.close()
-                shutil.rmtree(doc_upload_dir, ignore_errors=True)
-                raise HTTPException(status_code=400, detail=f"PDF page count ({total_pages}) exceeds limit of {MAX_PDF_PAGES} pages.")
-                
-            for page_idx in range(total_pages):
-                page = pdf_doc[page_idx]
-                mat = fitz.Matrix(2.5, 2.5)  # Render ~300 DPI
-                pix = page.get_pixmap(matrix=mat)
-                page_img_path = doc_upload_dir / f"page_{page_idx + 1}.png"
-                pix.save(str(page_img_path))
-                page_paths.append(str(page_img_path))
-            pdf_doc.close()
-            file_type = "pdf"
-        except HTTPException:
-            raise
-        except Exception as e:
+    clean_book_id = book_id.strip() if book_id and book_id.strip() else None
+    duplicate_info = None
+    if clean_book_id:
+        target_book = db.get_book_by_id(clean_book_id)
+        if not target_book:
             shutil.rmtree(doc_upload_dir, ignore_errors=True)
-            raise HTTPException(status_code=400, detail="Failed to decode or parse PDF document.")
-    else:
-        # Single image upload: validate dimensions and pixels
-        try:
-            with Image.open(source_file_path) as img:
-                w, h = img.size
-                if w > MAX_IMAGE_DIMENSION or h > MAX_IMAGE_DIMENSION or (w * h) > MAX_IMAGE_PIXELS:
-                    shutil.rmtree(doc_upload_dir, ignore_errors=True)
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"Image dimensions ({w}x{h}) exceed maximum allowed {MAX_IMAGE_DIMENSION}x{MAX_IMAGE_DIMENSION} px."
-                    )
-        except HTTPException:
-            raise
-        except Exception:
-            shutil.rmtree(doc_upload_dir, ignore_errors=True)
-            raise HTTPException(status_code=400, detail="Uploaded file is not a valid or readable image.")
+            raise HTTPException(status_code=404, detail=f"Book with ID '{clean_book_id}' not found.")
             
-        page_img_path = doc_upload_dir / f"page_1{ext}"
-        shutil.copyfile(source_file_path, page_img_path)
-        page_paths.append(str(page_img_path))
-        total_pages = 1
-        file_type = "image"
+        # Check perceptual hash duplicate against existing pages in this book
+        dup_match = check_duplicate_in_book(source_file_path, clean_book_id, threshold=DUPLICATE_HAMMING_THRESHOLD)
+        if dup_match and dup_match.get("is_duplicate"):
+            dup_act = (duplicate_action or "check").lower().strip()
+            if dup_act == "skip":
+                shutil.rmtree(doc_upload_dir, ignore_errors=True)
+                return {
+                    "success": True,
+                    "action_taken": "skipped",
+                    "is_duplicate": True,
+                    "duplicate_of": dup_match["duplicate_of"],
+                    "preview_url": dup_match["preview_url"],
+                    "hamming_distance": dup_match["hamming_distance"],
+                    "similarity_percentage": dup_match["similarity_percentage"],
+                    "message": "Duplicate page skipped."
+                }
+            elif dup_act == "replace":
+                rep_res = replace_page_image_with_archive(
+                    book_id=clean_book_id,
+                    page_number=dup_match["duplicate_page_number"],
+                    new_source=source_file_path,
+                    current_image_path=dup_match["preview_url"]
+                )
+                db.update_page_image_path(
+                    page_id=dup_match["duplicate_of"],
+                    original_image_path=rep_res["relative_url"],
+                    preprocessed_image_path=rep_res["relative_url"],
+                    original_sha256=file_sha256,
+                    reset_ocr=True
+                )
+                db.update_page_phash(dup_match["duplicate_of"], dup_match["phash"])
+                shutil.rmtree(doc_upload_dir, ignore_errors=True)
+                return {
+                    "success": True,
+                    "action_taken": "replaced",
+                    "is_duplicate": True,
+                    "duplicate_of": dup_match["duplicate_of"],
+                    "preview_url": rep_res["relative_url"],
+                    "archived_path": rep_res["archived_path"],
+                    "message": "Existing duplicate page replaced and archived."
+                }
+            elif dup_act == "check":
+                # Return duplicate warning with options: Skip, Keep Both, Replace
+                shutil.rmtree(doc_upload_dir, ignore_errors=True)
+                return {
+                    "success": False,
+                    "is_duplicate": True,
+                    "duplicate_of": dup_match["duplicate_of"],
+                    "duplicate_page_number": dup_match["duplicate_page_number"],
+                    "preview_url": dup_match["preview_url"],
+                    "hamming_distance": dup_match["hamming_distance"],
+                    "similarity_percentage": dup_match["similarity_percentage"],
+                    "options": ["skip", "keep_both", "replace"],
+                    "message": "Duplicate image detected (Hamming distance < 8). Choose: Skip, Keep Both, or Replace."
+                }
+            elif dup_act == "keep_both":
+                duplicate_info = dup_match
+            
+        start_u_order = db.get_next_upload_order_for_book(clean_book_id)
+        if start_page_number and start_page_number > 0:
+            start_p_num = start_page_number
+        else:
+            db_p_nums = db.get_book_page_numbers(clean_book_id)
+            disk_p_nums = list_existing_original_page_numbers(clean_book_id)
+            all_known = sorted(list(set(db_p_nums) | set(disk_p_nums)))
+            if all_known:
+                missing = detect_missing_pages(all_known)
+                start_p_num = missing[0] if missing else max(all_known) + 1
+            else:
+                start_p_num = 1
+                
+        if ext in ALLOWED_PDF_EXTENSIONS:
+            try:
+                split_pages = split_pdf_to_page_images(
+                    pdf_path=source_file_path,
+                    book_id=clean_book_id,
+                    start_page_number=start_p_num,
+                    start_upload_order=start_u_order,
+                    dpi=300
+                )
+                total_pages = len(split_pages)
+                file_type = "pdf"
+                page_items = split_pages
+                page_paths = [sp["file_path"] for sp in split_pages]
+            except Exception as e:
+                shutil.rmtree(doc_upload_dir, ignore_errors=True)
+                raise HTTPException(status_code=400, detail=f"Failed to process PDF manuscript: {e}")
+        else:
+            # Single image upload for book
+            try:
+                with Image.open(source_file_path) as img:
+                    w, h = img.size
+                    if w > MAX_IMAGE_DIMENSION or h > MAX_IMAGE_DIMENSION or (w * h) > MAX_IMAGE_PIXELS:
+                        shutil.rmtree(doc_upload_dir, ignore_errors=True)
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Image dimensions ({w}x{h}) exceed maximum allowed {MAX_IMAGE_DIMENSION}x{MAX_IMAGE_DIMENSION} px."
+                        )
+                img_item = save_image_to_originals(
+                    source=source_file_path,
+                    book_id=clean_book_id,
+                    page_number=start_p_num,
+                    upload_order=start_u_order
+                )
+                total_pages = 1
+                file_type = "image"
+                page_items = [img_item]
+                page_paths = [img_item["file_path"]]
+            except HTTPException:
+                raise
+            except Exception:
+                shutil.rmtree(doc_upload_dir, ignore_errors=True)
+                raise HTTPException(status_code=400, detail="Uploaded file is not a valid or readable image.")
+    else:
+        # Standard non-book document upload
+        if ext in ALLOWED_PDF_EXTENSIONS:
+            try:
+                pdf_doc = fitz.open(str(source_file_path))
+                total_pages = len(pdf_doc)
+                if total_pages == 0:
+                    pdf_doc.close()
+                    shutil.rmtree(doc_upload_dir, ignore_errors=True)
+                    raise HTTPException(status_code=400, detail="The PDF file contains no pages.")
+                if total_pages > MAX_PDF_PAGES:
+                    pdf_doc.close()
+                    shutil.rmtree(doc_upload_dir, ignore_errors=True)
+                    raise HTTPException(status_code=400, detail=f"PDF page count ({total_pages}) exceeds limit of {MAX_PDF_PAGES} pages.")
+                    
+                for page_idx in range(total_pages):
+                    page = pdf_doc[page_idx]
+                    mat = fitz.Matrix(2.5, 2.5)  # Render ~300 DPI
+                    pix = page.get_pixmap(matrix=mat)
+                    page_img_path = doc_upload_dir / f"page_{page_idx + 1}.png"
+                    pix.save(str(page_img_path))
+                    page_paths.append(str(page_img_path))
+                    page_items.append({
+                        "page_number": page_idx + 1,
+                        "upload_order": page_idx + 1,
+                        "file_path": str(page_img_path),
+                        "relative_url": to_safe_rel_url(str(page_img_path))
+                    })
+                pdf_doc.close()
+                file_type = "pdf"
+            except HTTPException:
+                raise
+            except Exception as e:
+                shutil.rmtree(doc_upload_dir, ignore_errors=True)
+                raise HTTPException(status_code=400, detail="Failed to decode or parse PDF document.")
+        else:
+            try:
+                with Image.open(source_file_path) as img:
+                    w, h = img.size
+                    if w > MAX_IMAGE_DIMENSION or h > MAX_IMAGE_DIMENSION or (w * h) > MAX_IMAGE_PIXELS:
+                        shutil.rmtree(doc_upload_dir, ignore_errors=True)
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Image dimensions ({w}x{h}) exceed maximum allowed {MAX_IMAGE_DIMENSION}x{MAX_IMAGE_DIMENSION} px."
+                        )
+            except HTTPException:
+                raise
+            except Exception:
+                shutil.rmtree(doc_upload_dir, ignore_errors=True)
+                raise HTTPException(status_code=400, detail="Uploaded file is not a valid or readable image.")
+                
+            page_img_path = doc_upload_dir / f"page_1{ext}"
+            shutil.copyfile(source_file_path, page_img_path)
+            page_paths.append(str(page_img_path))
+            page_items.append({
+                "page_number": 1,
+                "upload_order": 1,
+                "file_path": str(page_img_path),
+                "relative_url": to_safe_rel_url(str(page_img_path))
+            })
+            total_pages = 1
+            file_type = "image"
         
     provenance = {
         "sha256_hash": file_sha256,
@@ -458,8 +646,12 @@ async def upload_document(
     # Generate initial format-aware smart compression derivative for each page
     comp_mode = (compression_mode or "smart").lower().strip()
     phone_photo_detected = False
-    for p_idx, p_path in enumerate(page_paths):
-        p_num = p_idx + 1
+    for p_idx, item in enumerate(page_items):
+        p_num = item["page_number"]
+        u_order = item.get("upload_order", p_idx + 1)
+        p_path = item["file_path"]
+        orig_url = item.get("relative_url") or to_safe_rel_url(p_path)
+        
         p_sha256 = get_file_sha256(p_path)
         opt_path = doc_upload_dir / f"page_{p_num}_optimized.webp"
         try:
@@ -468,7 +660,7 @@ async def upload_document(
                 phone_photo_detected = True
             
             # For phone photos with auto_process on page 1, pass through OCR quality gate
-            if auto_process and p_num == 1 and is_phone and comp_mode == "smart":
+            if auto_process and p_idx == 0 and is_phone and comp_mode == "smart":
                 comp_res = compress_with_ocr_quality_gate(str(p_path), str(opt_path), mode=comp_mode)
             else:
                 comp_res = compress_image(str(p_path), str(opt_path), mode=comp_mode)
@@ -480,11 +672,12 @@ async def upload_document(
             opt_url = ""
             
         page_id = f"{doc_id}_p{p_num}"
-        orig_url = to_safe_rel_url(p_path)
+        p_phash = compute_phash(p_path)
         db.save_page_result(
             page_id=page_id,
             doc_id=doc_id,
             page_number=p_num,
+            upload_order=u_order,
             original_img=orig_url,
             preprocessed_img=opt_url or orig_url,
             quality_metrics={},
@@ -498,7 +691,9 @@ async def upload_document(
             status="PENDING_ADJUSTMENT" if not auto_process else "pending",
             original_sha256=p_sha256,
             optimized_img=opt_url,
-            compression_metadata=comp_res
+            compression_metadata=comp_res,
+            book_id=clean_book_id,
+            phash=p_phash
         )
     
     chosen_engine = (ocr_engine or "tesseract").lower().strip()
@@ -506,16 +701,18 @@ async def upload_document(
         chosen_engine = "tesseract"
 
     if auto_process:
-        # Process page 1 immediately for snappy feedback
-        status_result = process_single_page_pipeline(doc_id, 1, page_paths[0], engine=chosen_engine)
+        # Process first page immediately for snappy feedback
+        first_p_num = page_items[0]["page_number"]
+        status_result = process_single_page_pipeline(doc_id, first_p_num, page_paths[0], engine=chosen_engine)
         db.update_document_status(doc_id, DOC_STATUS_OCR_COMPLETE, verification_status=status_result, processed_pages=1)
         
         # Multi-page background runner
         if total_pages > 1:
             def process_remaining():
-                for p_num in range(2, total_pages + 1):
-                    process_single_page_pipeline(doc_id, p_num, page_paths[p_num - 1], engine=chosen_engine)
-                    db.update_document_status(doc_id, DOC_STATUS_OCR_COMPLETE, processed_pages=p_num)
+                for idx in range(1, total_pages):
+                    rem_p_num = page_items[idx]["page_number"]
+                    process_single_page_pipeline(doc_id, rem_p_num, page_paths[idx], engine=chosen_engine)
+                    db.update_document_status(doc_id, DOC_STATUS_OCR_COMPLETE, processed_pages=idx + 1)
             background_tasks.add_task(process_remaining)
             
     return {
@@ -1373,6 +1570,613 @@ def evaluate_benchmark(case_id: str = Form(...), extracted_text: str = Form(...)
         "case_id": case_id,
         "title": case["title"],
         "evaluation": eval_result
+    }
+
+# --- Book Management & Dashboard API Endpoints ---
+
+@app.get("/api/dashboard/metrics")
+def get_dashboard_metrics_endpoint():
+    """Returns overall system metrics: total, uploaded, ocr_done, verified, added_to_book."""
+    metrics = db.get_dashboard_metrics()
+    return {
+        "success": True,
+        "dashboard_metrics": metrics
+    }
+
+@app.post("/api/books")
+def create_book_endpoint(payload: CreateBookRequest):
+    """Creates a new Book manuscript container with initial metadata."""
+    if not payload.name or not payload.name.strip():
+        raise HTTPException(status_code=400, detail="Book name cannot be empty.")
+    
+    clean_name = payload.name.strip()
+    clean_desc = payload.description.strip() if payload.description else None
+    clean_lang = payload.language.strip() if payload.language else "hin"
+    pages_target = payload.total_pages if payload.total_pages and payload.total_pages > 0 else 400
+    
+    book = db.save_book(
+        name=clean_name,
+        description=clean_desc,
+        language=clean_lang,
+        total_pages=pages_target,
+        cover_image_url=payload.cover_image_url,
+        status="draft"
+    )
+    
+    progress = db.get_book_progress(book["id"])
+    metrics = db.get_dashboard_metrics()
+    
+    return {
+        "success": True,
+        "book": {
+            **book,
+            "progress": progress
+        },
+        "dashboard_metrics": metrics
+    }
+
+@app.get("/api/books")
+def list_books_endpoint(
+    status: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0)
+):
+    """Lists all books with real-time page progress and system-wide dashboard metrics."""
+    books_with_progress = db.list_books_with_progress(
+        status=status,
+        search=search,
+        limit=limit,
+        offset=offset
+    )
+    metrics = db.get_dashboard_metrics()
+    return {
+        "success": True,
+        "books": books_with_progress,
+        "total_books": len(books_with_progress),
+        "dashboard_metrics": metrics
+    }
+
+@app.get("/api/books/{book_id}")
+def get_book_endpoint(book_id: str):
+    """Retrieves a single book with all associated pages and real-time progress."""
+    book = db.get_book_by_id(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail=f"Book with ID '{book_id}' not found.")
+    
+    pages = db.get_pages_for_book(book_id)
+    progress = db.get_book_progress(book_id)
+    metrics = db.get_dashboard_metrics()
+    
+    return {
+        "success": True,
+        "book": {
+            **book,
+            "pages": pages,
+            "progress": progress
+        },
+        "dashboard_metrics": metrics
+    }
+
+@app.put("/api/books/{book_id}")
+def update_book_endpoint(book_id: str, payload: UpdateBookRequest):
+    """Edits book metadata (name, description, language, total_pages, cover_image_url, status)."""
+    existing = db.get_book_by_id(book_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail=f"Book with ID '{book_id}' not found.")
+    
+    update_data = {}
+    if payload.name is not None:
+        if not payload.name.strip():
+            raise HTTPException(status_code=400, detail="Book name cannot be empty.")
+        update_data["name"] = payload.name.strip()
+        
+    if payload.description is not None:
+        update_data["description"] = payload.description.strip()
+        
+    if payload.language is not None:
+        update_data["language"] = payload.language.strip()
+        
+    if payload.total_pages is not None:
+        if payload.total_pages <= 0:
+            raise HTTPException(status_code=400, detail="total_pages must be greater than 0.")
+        update_data["total_pages"] = payload.total_pages
+        
+    if payload.cover_image_url is not None:
+        update_data["cover_image_url"] = payload.cover_image_url
+        
+    if payload.status is not None:
+        valid_statuses = {"draft", "in_progress", "completed"}
+        if payload.status not in valid_statuses:
+            raise HTTPException(status_code=400, detail=f"Invalid status '{payload.status}'. Allowed: {sorted(list(valid_statuses))}")
+        update_data["status"] = payload.status
+
+    updated = db.update_book(book_id, **update_data)
+    progress = db.get_book_progress(book_id)
+    metrics = db.get_dashboard_metrics()
+    
+    return {
+        "success": True,
+        "book": {
+            **updated,
+            "progress": progress
+        },
+        "dashboard_metrics": metrics
+    }
+
+@app.delete("/api/books/{book_id}")
+def delete_book_endpoint(
+    book_id: str,
+    confirm: bool = Query(False, description="Explicit confirmation flag required: ?confirm=true")
+):
+    """Deletes a book and permanently deletes all related pages and OCR results upon confirmation."""
+    if not confirm:
+        raise HTTPException(
+            status_code=400,
+            detail="Deletion requires confirmation flag ?confirm=true. This action permanently deletes the book and all associated pages and OCR results."
+        )
+    
+    existing = db.get_book_by_id(book_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail=f"Book with ID '{book_id}' not found.")
+    
+    deleted_pages_count = db.delete_book_cascade(book_id)
+    metrics = db.get_dashboard_metrics()
+    
+    return {
+        "success": True,
+        "message": f"Book '{existing.get('name')}' and all {deleted_pages_count} associated pages deleted successfully.",
+        "deleted_book_id": book_id,
+        "deleted_pages_count": deleted_pages_count,
+        "dashboard_metrics": metrics
+    }
+
+@app.post("/api/books/{book_id}/pages/assign")
+def assign_pages_to_book_endpoint(book_id: str, payload: AssignPagesToBookRequest):
+    """Assigns pages from an ingested document to this book."""
+    existing = db.get_book_by_id(book_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail=f"Book with ID '{book_id}' not found.")
+    
+    assigned_count = 0
+    if payload.document_id and payload.page_numbers:
+        for p_num in payload.page_numbers:
+            if db.assign_page_to_book(payload.document_id, p_num, book_id):
+                assigned_count += 1
+    elif payload.document_id:
+        doc = db.get_document_by_id(payload.document_id)
+        if doc:
+            for p_num in range(1, doc.get("total_pages", 0) + 1):
+                if db.assign_page_to_book(payload.document_id, p_num, book_id):
+                    assigned_count += 1
+    
+    progress = db.get_book_progress(book_id)
+    metrics = db.get_dashboard_metrics()
+    
+    return {
+        "success": True,
+        "book_id": book_id,
+        "assigned_pages_count": assigned_count,
+        "progress": progress,
+        "dashboard_metrics": metrics
+    }
+
+
+@app.get("/api/books/{book_id}/missing-pages")
+def get_book_missing_pages_endpoint(
+    book_id: str,
+    up_to_total: bool = Query(False, description="Whether to include all remaining unscanned pages up to total_pages")
+):
+    """Detects missing page numbers in a book manuscript sequence starting from page 1.
+    If pages [1, 2, 4] exist, page 3 is detected and returned as missing.
+    """
+    book = db.get_book_by_id(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail=f"Book with ID '{book_id}' not found.")
+        
+    db_p_nums = db.get_book_page_numbers(book_id)
+    disk_p_nums = list_existing_original_page_numbers(book_id)
+    detected_pages = sorted(list(set(db_p_nums) | set(disk_p_nums)))
+    
+    total_target = book.get("total_pages") or 400
+    
+    missing_gaps = detect_missing_pages(detected_pages, total_pages=total_target, up_to_total=False)
+    missing_all = detect_missing_pages(detected_pages, total_pages=total_target, up_to_total=True)
+    
+    missing_list = missing_all if up_to_total else missing_gaps
+    max_page = max(detected_pages) if detected_pages else 0
+    unscanned_count = max(0, total_target - max_page)
+    
+    return {
+        "success": True,
+        "book_id": book_id,
+        "book_name": book["name"],
+        "total_pages": total_target,
+        "detected_pages": detected_pages,
+        "detected_count": len(detected_pages),
+        "missing_pages": missing_list,
+        "missing_gaps": missing_gaps,
+        "has_missing_pages": len(missing_gaps) > 0,
+        "max_page_uploaded": max_page,
+        "unscanned_pages_count": unscanned_count
+    }
+
+
+# --- Page Reorder, Replacement & Deletion APIs ---
+
+@app.post("/api/books/{book_id}/pages/reorder")
+def reorder_book_pages_endpoint(book_id: str, payload: ReorderPagesRequest):
+    """Updates upload_order of a book's pages based on their order in ordered_page_ids list."""
+    book = db.get_book_by_id(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail=f"Book with ID '{book_id}' not found.")
+        
+    if not payload.ordered_page_ids:
+        raise HTTPException(status_code=400, detail="ordered_page_ids cannot be empty.")
+        
+    updated_count = db.reorder_book_pages(book_id, payload.ordered_page_ids)
+    pages = db.get_pages_for_book(book_id, sort_by="upload_order")
+    
+    return {
+        "success": True,
+        "book_id": book_id,
+        "reordered_count": updated_count,
+        "ordered_page_ids": payload.ordered_page_ids,
+        "pages": pages
+    }
+
+
+@app.get("/api/books/{book_id}/pages")
+def get_book_pages_endpoint(
+    book_id: str,
+    sort_by: str = Query("upload_order", description="Sort by 'upload_order' or 'page_number'")
+):
+    """Returns pages for a book sorted by upload_order (default) or page_number."""
+    book = db.get_book_by_id(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail=f"Book with ID '{book_id}' not found.")
+        
+    pages = db.get_pages_for_book(book_id, sort_by=sort_by)
+    return {
+        "success": True,
+        "book_id": book_id,
+        "sort_by": sort_by,
+        "total_pages": len(pages),
+        "pages": pages
+    }
+
+
+@app.delete("/api/pages/{page_id}")
+def delete_page_endpoint(
+    page_id: str,
+    confirm_delete_original: bool = Query(False, description="Whether to also permanently delete the original image from storage/R2")
+):
+    """Deletes a page from the system. Original image is deleted from storage/R2 ONLY if confirm_delete_original=true."""
+    page = db.get_page_by_id(page_id)
+    if not page:
+        raise HTTPException(status_code=404, detail=f"Page with ID '{page_id}' not found.")
+        
+    deleted_page = db.delete_page_record(page_id)
+    
+    original_deleted = False
+    if confirm_delete_original:
+        orig_path = page.get("original_image_path", "")
+        if orig_path:
+            original_deleted = delete_original_image_file(orig_path)
+            
+    return {
+        "success": True,
+        "page_id": page_id,
+        "original_image_deleted": original_deleted,
+        "message": f"Page '{page_id}' removed." + (" Original image also permanently deleted." if original_deleted else " Original image preserved in storage.")
+    }
+
+
+@app.post("/api/pages/{page_id}/replace")
+async def replace_page_image_endpoint(
+    page_id: str,
+    file: UploadFile = File(...),
+    auto_process: bool = Form(True),
+    ocr_engine: Optional[str] = Form("tesseract")
+):
+    """Replaces a page's image with a new upload.
+    Old original image is automatically archived under originals/archive/{book_id}/{page_number}_{timestamp}.jpg.
+    """
+    page = db.get_page_by_id(page_id)
+    if not page:
+        raise HTTPException(status_code=404, detail=f"Page with ID '{page_id}' not found.")
+        
+    raw_filename = file.filename or "replaced_page"
+    ext = Path(raw_filename).suffix.lower()
+    if ext not in ALLOWED_IMAGE_EXTENSIONS:
+        raise HTTPException(status_code=400, detail=f"Invalid image format '{ext}'. Allowed: {sorted(list(ALLOWED_IMAGE_EXTENSIONS))}")
+        
+    content_bytes = await file.read()
+    if len(content_bytes) > MAX_FILE_SIZE_BYTES:
+        raise HTTPException(status_code=400, detail="Uploaded replacement image exceeds 50MB limit.")
+        
+    book_id = page.get("book_id")
+    page_number = page.get("page_number", 1)
+    
+    # 1. Archive old original and save new original
+    try:
+        rep_result = replace_page_image_with_archive(
+            book_id=book_id,
+            page_number=page_number,
+            new_source=content_bytes,
+            current_image_path=page.get("original_image_path")
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to replace and archive image: {e}")
+        
+    new_sha256 = hashlib.sha256(content_bytes).hexdigest()
+    
+    # 2. Update DB with new image path
+    db.update_page_image_path(
+        page_id=page_id,
+        original_image_path=rep_result["relative_url"],
+        preprocessed_image_path=rep_result["relative_url"],
+        original_sha256=new_sha256,
+        reset_ocr=True
+    )
+    
+    status_result = "PENDING"
+    if auto_process:
+        chosen_engine = (ocr_engine or "tesseract").lower().strip()
+        status_result = process_single_page_pipeline(
+            doc_id=page["document_id"],
+            page_number=page["page_number"],
+            image_path=rep_result["new_file_path"],
+            engine=chosen_engine
+        )
+        
+    updated_page = db.get_page_by_id(page_id)
+    
+    return {
+        "success": True,
+        "page_id": page_id,
+        "book_id": book_id,
+        "page_number": page_number,
+        "archived_path": rep_result["archived_path"],
+        "new_image_url": rep_result["relative_url"],
+        "status": status_result,
+        "page": updated_page
+    }
+
+
+@app.post("/api/books/{book_id}/check-duplicates")
+def check_book_duplicates_endpoint(
+    book_id: str,
+    threshold: int = Query(8, description="Hamming distance threshold (default: 8)")
+):
+    """Scans all pages in a book using perceptual hashing (phash)
+    and returns duplicate pairs with Hamming distance < threshold.
+    """
+    book = db.get_book_by_id(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail=f"Book with ID '{book_id}' not found.")
+        
+    pairs = scan_book_for_duplicates(book_id, threshold=threshold)
+    
+    return {
+        "success": True,
+        "book_id": book_id,
+        "book_name": book["name"],
+        "total_scanned_pages": len(db.get_pages_for_book(book_id)),
+        "duplicate_pairs_count": len(pairs),
+        "has_duplicates": len(pairs) > 0,
+        "threshold": threshold,
+        "duplicate_pairs": pairs
+    }
+
+
+# --- BookBuilder Compilation & Publication APIs ---
+
+@app.post("/api/books/{book_id}/builder/add")
+def builder_add_pages_endpoint(book_id: str, payload: BuilderAddPagesRequest):
+    """Adds verified pages to the BookBuilder publication container.
+    STRICT ENFORCEMENT: Only pages with verified status (COMPLETED/verified or confirmed_text)
+    can be added; unverified pages trigger a 400 error.
+    Regenerates combined_text according to page_order with 'Page X' headers and separator.
+    """
+    book = db.get_book_by_id(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail=f"Book with ID '{book_id}' not found.")
+        
+    if not payload.page_ids:
+        raise HTTPException(status_code=400, detail="page_ids list cannot be empty.")
+        
+    builder = db.get_or_create_book_builder(book_id)
+    included_set = set(builder.get("included_pages", []))
+    order_list = list(builder.get("page_order", []))
+    
+    pages_to_add = []
+    for pid in payload.page_ids:
+        page = db.get_page_by_id(pid)
+        if not page:
+            raise HTTPException(status_code=404, detail=f"Page with ID '{pid}' not found.")
+            
+        # Strict verification check: only verified pages allowed
+        if not db.is_page_verified(page):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Page '{pid}' (Page #{page.get('page_number')}) is not verified. Only verified pages (status='COMPLETED'/'verified' or confirmed_text) can be added to BookBuilder."
+            )
+        pages_to_add.append(page)
+        
+    # Add new page IDs and maintain page_order
+    for p in pages_to_add:
+        pid = p["id"]
+        p_num = int(p["page_number"])
+        if pid not in included_set:
+            included_set.add(pid)
+        if p_num not in order_list:
+            order_list.append(p_num)
+            
+    # Sort order_list numerically by default
+    order_list.sort()
+    
+    # Fetch all included page records to regenerate combined text
+    all_included_pages = [db.get_page_by_id(pid) for pid in included_set]
+    all_included_pages = [p for p in all_included_pages if p is not None]
+    
+    new_combined_text = db.generate_builder_combined_text(
+        pages=all_included_pages,
+        page_order=order_list,
+        separator=builder.get("separator")
+    )
+    
+    updated_builder = db.save_book_builder(
+        book_id=book_id,
+        combined_text=new_combined_text,
+        page_order=order_list,
+        included_pages=list(included_set),
+        separator=builder.get("separator")
+    )
+    
+    return {
+        "success": True,
+        "book_id": book_id,
+        "builder": updated_builder,
+        "added_count": len(pages_to_add),
+        "total_included_pages": len(included_set)
+    }
+
+
+@app.post("/api/books/{book_id}/builder/remove")
+def builder_remove_page_endpoint(book_id: str, payload: BuilderRemovePageRequest):
+    """Removes a page from the BookBuilder publication and regenerates combined_text."""
+    book = db.get_book_by_id(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail=f"Book with ID '{book_id}' not found.")
+        
+    builder = db.get_or_create_book_builder(book_id)
+    included_pages = list(builder.get("included_pages", []))
+    
+    if payload.page_id not in included_pages:
+        return {
+            "success": True,
+            "message": f"Page '{payload.page_id}' was not in the builder collection.",
+            "builder": builder
+        }
+        
+    # Remove page
+    page_record = db.get_page_by_id(payload.page_id)
+    included_pages.remove(payload.page_id)
+    
+    # Fetch remaining pages
+    remaining_pages = [db.get_page_by_id(pid) for pid in included_pages]
+    remaining_pages = [p for p in remaining_pages if p is not None]
+    
+    # Recompute page_order
+    remaining_numbers = {int(p["page_number"]) for p in remaining_pages if p.get("page_number") is not None}
+    order_list = [num for num in builder.get("page_order", []) if num in remaining_numbers]
+    
+    new_combined_text = db.generate_builder_combined_text(
+        pages=remaining_pages,
+        page_order=order_list,
+        separator=builder.get("separator")
+    )
+    
+    updated_builder = db.save_book_builder(
+        book_id=book_id,
+        combined_text=new_combined_text,
+        page_order=order_list,
+        included_pages=included_pages,
+        separator=builder.get("separator")
+    )
+    
+    return {
+        "success": True,
+        "book_id": book_id,
+        "removed_page_id": payload.page_id,
+        "builder": updated_builder,
+        "total_included_pages": len(included_pages)
+    }
+
+
+@app.post("/api/books/{book_id}/builder/reorder")
+def builder_reorder_pages_endpoint(book_id: str, payload: BuilderReorderRequest):
+    """Reorders the pages in BookBuilder according to ordered_page_numbers list
+    and regenerates combined_text in the new order.
+    """
+    book = db.get_book_by_id(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail=f"Book with ID '{book_id}' not found.")
+        
+    builder = db.get_or_create_book_builder(book_id)
+    included_pages = list(builder.get("included_pages", []))
+    
+    all_pages = [db.get_page_by_id(pid) for pid in included_pages]
+    all_pages = [p for p in all_pages if p is not None]
+    
+    new_combined_text = db.generate_builder_combined_text(
+        pages=all_pages,
+        page_order=payload.ordered_page_numbers,
+        separator=builder.get("separator")
+    )
+    
+    updated_builder = db.save_book_builder(
+        book_id=book_id,
+        combined_text=new_combined_text,
+        page_order=payload.ordered_page_numbers,
+        included_pages=included_pages,
+        separator=builder.get("separator")
+    )
+    
+    return {
+        "success": True,
+        "book_id": book_id,
+        "ordered_page_numbers": payload.ordered_page_numbers,
+        "builder": updated_builder
+    }
+
+
+@app.get("/api/books/{book_id}/builder")
+def get_book_builder_endpoint(book_id: str):
+    """Returns BookBuilder collection data including combined text, page order,
+    and detailed list of included verified pages.
+    """
+    book = db.get_book_by_id(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail=f"Book with ID '{book_id}' not found.")
+        
+    builder = db.get_or_create_book_builder(book_id)
+    
+    # Fetch included page records
+    included_page_records = []
+    for pid in builder.get("included_pages", []):
+        p = db.get_page_by_id(pid)
+        if p:
+            included_page_records.append(p)
+            
+    return {
+        "success": True,
+        "book_id": book_id,
+        "book_name": book["name"],
+        "builder": builder,
+        "pages": included_page_records,
+        "total_included_pages": len(included_page_records)
+    }
+
+
+@app.put("/api/books/{book_id}/builder/edit")
+def edit_book_builder_text_endpoint(book_id: str, payload: BuilderEditTextRequest):
+    """Allows manual editing of BookBuilder combined_text.
+    IMPORTANT GUARANTEE: The original verified_text of individual Page records
+    remains completely safe, intact, and immutable.
+    """
+    book = db.get_book_by_id(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail=f"Book with ID '{book_id}' not found.")
+        
+    updated_builder = db.update_book_builder_text(book_id, payload.combined_text)
+    
+    return {
+        "success": True,
+        "book_id": book_id,
+        "builder": updated_builder,
+        "message": "BookBuilder combined text updated successfully. Original page verified texts remain preserved."
     }
 
 # Mount built frontend assets if dist exists

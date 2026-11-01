@@ -105,6 +105,7 @@ export interface CropSuggestionResponse {
   success: boolean;
   document_id: string;
   page_number: number;
+  upload_order?: number;
   crop: CropBox;
   image_width: number;
   image_height: number;
@@ -140,6 +141,7 @@ export interface CompressionMetadata {
 export interface CompressionInfoResponse {
   document_id: string;
   page_number: number;
+  upload_order?: number;
   is_original_intact: boolean;
   original_sha256: string;
   expected_sha256: string;
@@ -208,6 +210,7 @@ export interface PageData {
   id: string;
   document_id: string;
   page_number: number;
+  upload_order?: number;
   original_image_path: string;
   preprocessed_image_path: string;
   adjusted_image_path?: string;
@@ -256,6 +259,7 @@ export interface DocumentData {
 
 export interface UnresolvedPageInfo {
   page_number: number;
+  upload_order?: number;
   status: string;
   error_code: string;
   error_message: string;
@@ -267,6 +271,7 @@ export interface CorrectionLog {
   id: number;
   document_id: string;
   page_number: number;
+  upload_order?: number;
   word_index: number;
   original_text: string;
   corrected_text: string;
@@ -283,3 +288,71 @@ export interface BenchmarkCase {
   notes: string;
 }
 
+
+export type BookStatus = 'draft' | 'in_progress' | 'completed';
+
+export interface BookProgress {
+  total_pages: number;
+  pages_count: number;
+  ocr_done_pages: number;
+  verified_pages: number;
+  progress_percentage: number;
+}
+
+export interface DashboardMetrics {
+  total: number;
+  uploaded: number;
+  ocr_done: number;
+  verified: number;
+  added_to_book: number;
+}
+
+export interface BookData {
+  id: string;
+  name: string;
+  description?: string | null;
+  language: string;
+  total_pages: number;
+  cover_image_url?: string | null;
+  status: BookStatus;
+  created_at: string;
+  updated_at: string;
+  pages_count?: number;
+  verified_pages?: number;
+  ocr_done_pages?: number;
+  progress_percentage?: number;
+  progress?: BookProgress;
+  pages?: PageData[];
+}
+
+export interface CreateBookPayload {
+  name: string;
+  description?: string;
+  language?: string;
+  total_pages?: number;
+  cover_image_url?: string;
+}
+
+export interface UpdateBookPayload {
+  name?: string;
+  description?: string;
+  language?: string;
+  total_pages?: number;
+  cover_image_url?: string;
+  status?: BookStatus;
+}
+
+
+export interface MissingPagesReport {
+  success: boolean;
+  book_id: string;
+  book_name: string;
+  total_pages: number;
+  detected_pages: number[];
+  detected_count: number;
+  missing_pages: number[];
+  missing_gaps: number[];
+  has_missing_pages: boolean;
+  max_page_uploaded: number;
+  unscanned_pages_count: number;
+}

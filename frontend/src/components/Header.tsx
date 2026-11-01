@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  UploadCloud, BookOpen, BarChart3, Sparkles, Globe2, 
+  UploadCloud, BookOpen, FileText, BarChart3, Sparkles, Globe2, 
   ShieldCheck, Menu, X 
 } from 'lucide-react';
 import type { Language } from '../i18n/translations';
@@ -14,6 +14,8 @@ interface HeaderProps {
   onOpenHistory: () => void;
   onOpenBenchmark: () => void;
   onOpenSamples: () => void;
+  onOpenBooks?: () => void;
+  activeView?: 'scanner' | 'books';
   activeDocTitle?: string;
 }
 
@@ -25,6 +27,8 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenHistory,
   onOpenBenchmark,
   onOpenSamples,
+  onOpenBooks,
+  activeView = 'scanner',
   activeDocTitle,
 }) => {
   const t = translations[lang];
@@ -100,6 +104,23 @@ export const Header: React.FC<HeaderProps> = ({
               <span>{t.navUpload}</span>
             </button>
 
+            {onOpenBooks && (
+              <button
+                type="button"
+                onClick={onOpenBooks}
+                className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs sm:text-sm transition-colors font-devanagari ${
+                  activeView === 'books'
+                    ? 'bg-vedic-50 border-vedic-300 text-vedic-900 font-bold shadow-2xs'
+                    : 'border-stone-200 hover:bg-stone-50 text-stone-700 font-medium'
+                }`}
+                title={lang === 'hi' ? 'ग्रन्थ संग्रह' : 'Books'}
+                aria-label={lang === 'hi' ? 'ग्रन्थ संग्रह' : 'Books'}
+              >
+                <BookOpen className="w-4 h-4 text-vedic-700" />
+                <span>{lang === 'hi' ? 'ग्रन्थ संग्रह' : 'Books'}</span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={onOpenHistory}
@@ -107,7 +128,7 @@ export const Header: React.FC<HeaderProps> = ({
               title={t.navHistory}
               aria-label={t.navHistory}
             >
-              <BookOpen className="w-4 h-4 text-vedic-700" />
+              <FileText className="w-4 h-4 text-vedic-700" />
               <span>{t.navHistory}</span>
             </button>
 

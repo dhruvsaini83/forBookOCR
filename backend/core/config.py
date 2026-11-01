@@ -12,10 +12,12 @@ else:
 UPLOADS_DIR = DATA_DIR / "uploads"
 PROCESSED_DIR = DATA_DIR / "processed"
 EXPORTS_DIR = DATA_DIR / "exports"
+ORIGINALS_DIR = DATA_DIR / "originals"
+ARCHIVE_ORIGINALS_DIR = ORIGINALS_DIR / "archive"
 DB_PATH = DATA_DIR / "preservation.db"
 
 # Ensure directories exist
-for directory in [DATA_DIR, UPLOADS_DIR, PROCESSED_DIR, EXPORTS_DIR]:
+for directory in [DATA_DIR, UPLOADS_DIR, PROCESSED_DIR, EXPORTS_DIR, ORIGINALS_DIR, ARCHIVE_ORIGINALS_DIR]:
     directory.mkdir(parents=True, exist_ok=True)
 
 # Tesseract Configuration
