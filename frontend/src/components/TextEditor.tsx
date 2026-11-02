@@ -6,6 +6,7 @@ import {
 import type { WordToken } from '../types';
 import type { Language } from '../i18n/translations';
 import { translations } from '../i18n/translations';
+import { copyToClipboard } from '../utils/clipboard';
 
 interface TextEditorProps {
   verifiedText: string;
@@ -54,7 +55,7 @@ export const TextEditor: React.FC<TextEditorProps> = ({
       const textToCopy = viewMode === 'raw' 
         ? rawText 
         : (viewMode === 'confirmed' ? (confirmedText || verifiedText) : verifiedText);
-      await navigator.clipboard.writeText(textToCopy);
+      await copyToClipboard(textToCopy);
       setCopiedType(viewMode as any);
       setTimeout(() => setCopiedType(null), 2500);
     } catch (e) {
@@ -64,7 +65,7 @@ export const TextEditor: React.FC<TextEditorProps> = ({
 
   const handleCopyRaw = async () => {
     try {
-      await navigator.clipboard.writeText(rawText);
+      await copyToClipboard(rawText);
       setCopiedType('raw');
       setTimeout(() => setCopiedType(null), 2500);
     } catch (e) {

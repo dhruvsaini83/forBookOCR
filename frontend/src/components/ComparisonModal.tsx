@@ -7,6 +7,7 @@ import type { Language } from '../i18n/translations';
 import { translations } from '../i18n/translations';
 import type { ComparisonData, WordDiffItem } from '../types';
 import { api } from '../services/api';
+import { copyToClipboard } from '../utils/clipboard';
 
 interface ComparisonModalProps {
   isOpen: boolean;
@@ -137,7 +138,7 @@ export const ComparisonModal: React.FC<ComparisonModalProps> = ({
   };
 
   const handleCopy = (text: string, engineName: string) => {
-    navigator.clipboard.writeText(text);
+    copyToClipboard(text);
     setCopiedEngine(engineName);
     setTimeout(() => setCopiedEngine(null), 2000);
   };

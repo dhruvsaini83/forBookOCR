@@ -7,6 +7,7 @@ import {
   FileCode, Globe, BookOpen
 } from 'lucide-react';
 import { api, BACKEND_URL } from '../services/api';
+import { copyToClipboard } from '../utils/clipboard';
 import type { ExportFormat, ExportScope, BookExportResponse, BookData } from '../types';
 import type { Language } from '../i18n/translations';
 
@@ -229,7 +230,7 @@ export const BookExport: React.FC<BookExportProps> = ({
   const handleCopyPresignedUrl = async (url: string) => {
     try {
       const fullUrl = url.startsWith('http') ? url : `${BACKEND_URL}${url}`;
-      await navigator.clipboard.writeText(fullUrl);
+      await copyToClipboard(fullUrl);
       setCopiedUrl(true);
       setTimeout(() => setCopiedUrl(false), 2000);
     } catch (err) {

@@ -23,6 +23,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { api, getStorageUrl } from '../services/api';
+import { copyToClipboard } from '../utils/clipboard';
 import type { BookData, PageData, BookBuilderData } from '../types';
 import type { Language } from '../i18n/translations';
 
@@ -616,7 +617,11 @@ export const BookBuilder: React.FC<BookBuilderProps> = ({
       return;
     }
     try {
-      await navigator.clipboard.writeText(combinedText);
+      const ok = await copyToClipboard(combinedText);
+      if (!ok) {
+        showToast(isHi ? 'कॉपी करने में त्रुटि' : 'Failed to copy');
+        return;
+      }
       setCopiedComplete(true);
       showToast(isHi ? 'संपूर्ण पुस्तक पाठ क्लिपबोर्ड पर कॉपी किया गया! ✓' : 'Complete book text copied! ✓');
       setTimeout(() => setCopiedComplete(false), 2500);
@@ -642,7 +647,11 @@ export const BookBuilder: React.FC<BookBuilderProps> = ({
     const finalCopyText = textPieces.join(separator);
 
     try {
-      await navigator.clipboard.writeText(finalCopyText);
+      const ok = await copyToClipboard(finalCopyText);
+      if (!ok) {
+        showToast(isHi ? 'कॉपी करने में त्रुटि' : 'Failed to copy');
+        return;
+      }
       setCopiedSelected(true);
       showToast(isHi 
         ? `${pagesToCopy.length} चयनित पृष्ठों का पाठ कॉपी हो गया! ✓` 
@@ -657,7 +666,7 @@ export const BookBuilder: React.FC<BookBuilderProps> = ({
   const handleSinglePageCopy = async (page: PageData) => {
     const text = `Page ${page.page_number}\n${getPageTextSnippet(page)}`;
     try {
-      await navigator.clipboard.writeText(text);
+      await copyToClipboard(text);
       showToast(isHi ? `पृष्ठ ${page.page_number} कॉपी किया गया!` : `Page ${page.page_number} copied!`);
     } catch (e) {
       console.error(e);

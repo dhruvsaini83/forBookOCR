@@ -6,6 +6,7 @@ import {
   Sparkles, Layers, BookMarked, Home
 } from 'lucide-react';
 import { api, getStorageUrl } from '../services/api';
+import { copyToClipboard } from '../utils/clipboard';
 import type { BhajanItem, BhajanSearchFilter, BookData } from '../types';
 import type { Language } from '../i18n/translations';
 
@@ -211,7 +212,7 @@ export const Library: React.FC<LibraryProps> = ({
   // Copy Bhajan text to clipboard
   const handleCopyText = async (textToCopy: string, bhajanId: string) => {
     try {
-      await navigator.clipboard.writeText(textToCopy);
+      await copyToClipboard(textToCopy);
       setCopiedBhajanId(bhajanId);
       setTimeout(() => setCopiedBhajanId(null), 2000);
     } catch (err) {

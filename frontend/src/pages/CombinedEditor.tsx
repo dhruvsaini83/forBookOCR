@@ -6,6 +6,7 @@ import {
   Sparkles, FolderOpen, Trash2
 } from 'lucide-react';
 import { api, getStorageUrl } from '../services/api';
+import { copyToClipboard } from '../utils/clipboard';
 import type {
   BookData,
   PageData,
@@ -447,7 +448,7 @@ export const CombinedEditor: React.FC<CombinedEditorProps> = ({
   // Copy complete text
   const handleCopyComplete = async () => {
     try {
-      await navigator.clipboard.writeText(combinedText);
+      await copyToClipboard(combinedText);
       setCopiedSuccess(true);
       showToast(isHi ? 'संपूर्ण पाठ क्लिपबोर्ड पर कॉपी किया गया! ✓' : 'Copied to clipboard! ✓');
       setTimeout(() => setCopiedSuccess(false), 2000);
@@ -912,7 +913,7 @@ export const CombinedEditor: React.FC<CombinedEditorProps> = ({
                         <button
                           type="button"
                           onClick={() => {
-                            navigator.clipboard.writeText(sec.text);
+                            copyToClipboard(sec.text);
                             showToast(isHi ? `पृष्ठ ${sec.pageNumber} कॉपी हुआ!` : 'Page text copied!');
                           }}
                           className="p-1 rounded-lg text-stone-400 hover:text-stone-700 hover:bg-stone-100"
