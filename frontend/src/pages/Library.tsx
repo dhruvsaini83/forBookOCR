@@ -782,6 +782,8 @@ export const Library: React.FC<LibraryProps> = ({
                   <img
                     src={getStorageUrl(activeBhajan.page_image_url)}
                     alt={`Manuscript page ${activeBhajan.original_page_number}`}
+                    loading="lazy"
+                    decoding="async"
                     className="max-h-[82vh] w-auto object-contain rounded-lg shadow-2xl border border-stone-800"
                     onError={(e) => {
                       e.currentTarget.style.display = 'none';

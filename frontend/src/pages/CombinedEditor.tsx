@@ -889,6 +889,8 @@ export const CombinedEditor: React.FC<CombinedEditorProps> = ({
                             <img
                               src={thumb}
                               alt={`P${sec.pageNumber}`}
+                              loading="lazy"
+                              decoding="async"
                               className="w-full h-full object-cover"
                               onError={(e) => {
                                 e.currentTarget.style.display = 'none';

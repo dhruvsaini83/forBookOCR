@@ -385,7 +385,7 @@ export const LearningDashboard: React.FC<LearningDashboardProps> = ({
                 <span>फाइन-ट्यून्ड मॉडल सक्रिय व उपलब्ध</span>
               </span>
             ) : (
-              <span className="text-xs text-stone-400">
+              <span className="text-xs text-stone-500 font-medium">
                 (अभी केवल बेस मॉडल उपलब्ध है, ५०० सुधारों पर फाइन-ट्यूनिंग करें)
               </span>
             )}
@@ -506,7 +506,7 @@ export const LearningDashboard: React.FC<LearningDashboardProps> = ({
                 </div>
               </div>
               <div className="text-3xl font-extrabold text-orange-950 mt-2 font-mono">
-                {stats?.confusions?.length || 0} <span className="text-xs font-normal text-stone-400">जोड़े</span>
+                {stats?.confusions?.length || 0} <span className="text-xs font-medium text-stone-500">जोड़े</span>
               </div>
               <p className="text-xs text-stone-500 mt-1">
                 OCR इंजनों की सबसे सामान्य लिपिकीय त्रुटियां
@@ -524,7 +524,7 @@ export const LearningDashboard: React.FC<LearningDashboardProps> = ({
                   </span>
                 ))}
                 {(!stats?.confusions || stats.confusions.length === 0) && (
-                  <span className="text-xs text-stone-400">कोई भ्रम जोड़ा नहीं मिला</span>
+                  <span className="text-xs text-stone-500 font-medium">कोई भ्रम जोड़ा नहीं मिला</span>
                 )}
               </div>
             </div>
@@ -693,7 +693,7 @@ export const LearningDashboard: React.FC<LearningDashboardProps> = ({
               <tbody className="divide-y divide-stone-100">
                 {filteredCorrections.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="py-12 text-center text-stone-400">
+                    <td colSpan={5} className="py-12 text-center text-stone-500 font-medium">
                       कोई हालिया सुधार नहीं मिला। सत्यापन पृष्ठ में शब्दों को सुधारने पर वे यहाँ सूचीबद्ध होंगे।
                     </td>
                   </tr>
@@ -744,7 +744,7 @@ export const LearningDashboard: React.FC<LearningDashboardProps> = ({
                         </td>
 
                         {/* Date */}
-                        <td className="py-2.5 px-4 text-stone-400 font-mono text-[11px]">
+                        <td className="py-2.5 px-4 text-stone-500 font-mono text-[11px]">
                           {row.created_at ? new Date(row.created_at).toLocaleString('hi-IN') : '-'}
                         </td>
                       </tr>

@@ -40,19 +40,19 @@ export const VerificationPanel: React.FC<VerificationPanelProps> = ({
       details: (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 text-xs text-stone-600 font-devanagari">
           <div className="p-2.5 rounded-xl bg-stone-50 border border-stone-200">
-            <span className="text-stone-400 block text-[10px]">अस्पष्टता माप (Laplacian)</span>
+            <span className="text-stone-500 font-medium block text-[10px]">अस्पष्टता माप (Laplacian)</span>
             <span className="font-bold text-stone-900 text-sm">{metrics.stage1?.laplacian_variance}</span>
           </div>
           <div className="p-2.5 rounded-xl bg-stone-50 border border-stone-200">
-            <span className="text-stone-400 block text-[10px]">विरोधाभास (Contrast)</span>
+            <span className="text-stone-500 font-medium block text-[10px]">विरोधाभास (Contrast)</span>
             <span className="font-bold text-stone-900 text-sm">{metrics.stage1?.contrast_rating}</span>
           </div>
           <div className="p-2.5 rounded-xl bg-stone-50 border border-stone-200">
-            <span className="text-stone-400 block text-[10px]">झुकाव कोण (Deskew)</span>
+            <span className="text-stone-500 font-medium block text-[10px]">झुकाव कोण (Deskew)</span>
             <span className="font-bold text-stone-900 text-sm">{metrics.stage1?.detected_skew_angle}°</span>
           </div>
           <div className="p-2.5 rounded-xl bg-stone-50 border border-stone-200">
-            <span className="text-stone-400 block text-[10px]">आयाम (Dimensions)</span>
+            <span className="text-stone-500 font-medium block text-[10px]">आयाम (Dimensions)</span>
             <span className="font-bold text-stone-900 text-sm">
               {metrics.stage1?.dimensions?.width}×{metrics.stage1?.dimensions?.height}
             </span>
@@ -70,7 +70,7 @@ export const VerificationPanel: React.FC<VerificationPanelProps> = ({
       details: (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 text-xs text-stone-600 font-devanagari">
           <div className="p-2.5 rounded-xl bg-stone-50 border border-stone-200">
-            <span className="text-stone-400 block text-[10px]">कुल निष्कर्षित शब्द</span>
+            <span className="text-stone-500 font-medium block text-[10px]">कुल निष्कर्षित शब्द</span>
             <span className="font-bold text-stone-900 text-sm">{metrics.stage2?.word_count}</span>
           </div>
           <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200">
@@ -99,7 +99,7 @@ export const VerificationPanel: React.FC<VerificationPanelProps> = ({
         <div className="pt-2 text-xs text-stone-600 font-devanagari space-y-2">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
             <div className="p-2.5 rounded-xl bg-stone-50 border border-stone-200">
-              <span className="text-stone-400 block text-[10px]">द्वितीयक मॉडल (Secondary Pass)</span>
+              <span className="text-stone-500 font-medium block text-[10px]">द्वितीयक मॉडल (Secondary Pass)</span>
               <span className="font-bold text-stone-900 truncate block text-xs">
                 {metrics.stage3?.secondary_engine || 'Tesseract Script/Devanagari (PSM 3)'}
               </span>
@@ -163,7 +163,7 @@ export const VerificationPanel: React.FC<VerificationPanelProps> = ({
         <div className="pt-2 text-xs text-stone-600 font-devanagari space-y-2">
           <div className="grid grid-cols-2 gap-2">
             <div className="p-2.5 rounded-xl bg-stone-50 border border-stone-200">
-              <span className="text-stone-400 block text-[10px]">कुल शब्द</span>
+              <span className="text-stone-500 font-medium block text-[10px]">कुल शब्द</span>
               <span className="font-bold text-stone-900 text-sm">{metrics.stage5?.total_words}</span>
             </div>
             <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200">

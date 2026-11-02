@@ -111,7 +111,7 @@ export const WordInspectorModal: React.FC<WordInspectorModalProps> = ({
                 className="max-h-20 object-contain rounded filter contrast-125"
               />
             ) : (
-              <span className="text-xs text-stone-400 font-devanagari">
+              <span className="text-xs text-stone-500 font-medium font-devanagari">
                 (अंश दृश्य उपलब्ध नहीं है)
               </span>
             )}

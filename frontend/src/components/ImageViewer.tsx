@@ -294,7 +294,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
         aria-label="Document Image Canvas"
       >
         {imgError || !currentImgSrc ? (
-          <div className="flex flex-col items-center justify-center p-8 text-stone-400 text-center font-devanagari">
+          <div className="flex flex-col items-center justify-center p-8 text-stone-500 font-medium text-center font-devanagari">
             <ImageOff className="w-10 h-10 mb-2 opacity-60" />
             <p className="text-sm">दस्तावेज़ छवि उपलब्ध नहीं है अथवा लोड नहीं हो सकी।</p>
           </div>
