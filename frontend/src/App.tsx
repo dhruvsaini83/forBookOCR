@@ -17,6 +17,7 @@ import { ComparisonModal } from './components/ComparisonModal';
 import { Books } from './pages/Books';
 import { BookBuilder } from './pages/BookBuilder';
 import { CombinedEditor } from './pages/CombinedEditor';
+import { Library } from './pages/Library';
 import type { Language } from './i18n/translations';
 import { translations } from './i18n/translations';
 import type { DocumentData, PageData, WordToken } from './types';
@@ -40,8 +41,11 @@ export const App: React.FC = () => {
     pages: any[];
   } | null>(null);
 
-  // Top-level Navigation View ('scanner' | 'books')
-  const [currentView, setCurrentView] = useState<'scanner' | 'books' | 'builder' | 'combined-editor'>(() => {
+  // Top-level Navigation View ('scanner' | 'books' | 'builder' | 'combined-editor' | 'library')
+  const [currentView, setCurrentView] = useState<'scanner' | 'books' | 'builder' | 'combined-editor' | 'library'>(() => {
+    if (typeof window !== 'undefined' && window.location.pathname.includes('/library')) {
+      return 'library';
+    }
     if (typeof window !== 'undefined' && window.location.pathname.includes('/builder')) {
       return 'builder';
     }
@@ -115,7 +119,9 @@ export const App: React.FC = () => {
   // Browser history & custom navigation listener
   useEffect(() => {
     const handlePopState = () => {
-      if (typeof window !== 'undefined' && window.location.pathname.startsWith('/books')) {
+      if (typeof window !== 'undefined' && window.location.pathname.includes('/library')) {
+        setCurrentView('library');
+      } else if (typeof window !== 'undefined' && window.location.pathname.startsWith('/books')) {
         setCurrentView('books');
       } else {
         setCurrentView('scanner');
@@ -266,8 +272,22 @@ export const App: React.FC = () => {
         activeDocTitle={currentDoc?.title}
       />
 
-      {/* View Switcher: Combined Editor vs Book Builder vs Books Management vs OCR Scanner Workspace */}
-      {currentView === 'combined-editor' && selectedBookIdForBuilder ? (
+      {/* View Switcher: Library vs Combined Editor vs Book Builder vs Books Management vs OCR Scanner Workspace */}
+      {currentView === 'library' && selectedBookIdForBuilder ? (
+        <Library
+          bookId={selectedBookIdForBuilder}
+          lang={lang}
+          onNavigateBack={() => setCurrentView('books')}
+          onNavigateHome={() => setCurrentView('scanner')}
+          onOpenBookBuilder={(bookId) => {
+            setSelectedBookIdForBuilder(bookId);
+            setCurrentView('builder');
+            if (typeof window !== 'undefined') {
+              window.history.pushState({}, '', `/books/${bookId}/builder`);
+            }
+          }}
+        />
+      ) : currentView === 'combined-editor' && selectedBookIdForBuilder ? (
         <CombinedEditor
           bookId={selectedBookIdForBuilder}
           lang={lang}
@@ -295,6 +315,13 @@ export const App: React.FC = () => {
             setCurrentView('scanner');
             if (typeof window !== 'undefined') {
               window.history.pushState({}, '', '/');
+            }
+          }}
+          onOpenLibrary={(bookId) => {
+            setSelectedBookIdForBuilder(bookId);
+            setCurrentView('library');
+            if (typeof window !== 'undefined') {
+              window.history.pushState({}, '', `/books/${bookId}/library`);
             }
           }}
           onOpenBookBuilder={(bookId) => {

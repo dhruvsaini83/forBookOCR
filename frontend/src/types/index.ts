@@ -407,3 +407,36 @@ export interface BuilderDraftItem {
   created_at: string;
   updated_at?: string;
 }
+
+export interface BhajanItem {
+  id: string;
+  bhajan_number: number;
+  title: string;
+  text: string;
+  original_page_number: number;
+  starting_lines: string;
+  page_image_url?: string;
+}
+
+export type BhajanSearchFilter = 'all' | 'title' | 'number' | 'content' | 'starting_lines';
+
+export interface BookBhajansResponse {
+  success: boolean;
+  book_id: string;
+  book_name?: string;
+  total: number;
+  count: number;
+  bhajans: BhajanItem[];
+}
+
+export interface BhajanSearchResponse {
+  success: boolean;
+  book_id: string;
+  book_name?: string;
+  query: string;
+  filter: BhajanSearchFilter;
+  total: number;
+  count: number;
+  results: BhajanItem[];
+  bhajans: BhajanItem[];
+}

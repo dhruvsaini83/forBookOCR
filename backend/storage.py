@@ -244,7 +244,10 @@ def upload_export(book_id: str, filename: str, file_bytes: bytes) -> str:
             ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             ".json": "application/json",
             ".csv": "text/csv; charset=utf-8",
-            ".md": "text/markdown; charset=utf-8"
+            ".md": "text/markdown; charset=utf-8",
+            ".html": "text/html; charset=utf-8",
+            ".htm": "text/html; charset=utf-8",
+            ".pdf": "application/pdf"
         }
         if ext in mime_types:
             content_type = mime_types[ext]

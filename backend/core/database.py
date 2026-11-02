@@ -1178,6 +1178,7 @@ def save_book_builder(
     separator: str = DEFAULT_BUILDER_SEPARATOR
 ) -> Dict[str, Any]:
     """Updates a book builder collection with newly regenerated combined text and page order."""
+    get_or_create_book_builder(book_id)
     now = datetime.now().isoformat()
     conn = get_db_connection()
     cursor = conn.cursor()

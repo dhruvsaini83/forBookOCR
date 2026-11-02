@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   BookOpen, Plus, Search, Edit3, Trash2, CheckCircle2,
   Clock, AlertTriangle, X, Image as ImageIcon, UploadCloud,
-  ArrowLeft, RefreshCw, ShieldCheck, Sparkles, Layers, ArrowUpDown
+  ArrowLeft, RefreshCw, ShieldCheck, Sparkles, Layers, ArrowUpDown, BookMarked
 } from 'lucide-react';
 import { api, getStorageUrl } from '../services/api';
 import type { BookData, BookStatus, CreateBookPayload, UpdateBookPayload, DashboardMetrics } from '../types';
@@ -14,13 +14,15 @@ interface BooksProps {
   onNavigateHome?: () => void;
   onSelectBook?: (bookId: string) => void;
   onOpenBookBuilder?: (bookId: string) => void;
+  onOpenLibrary?: (bookId: string) => void;
 }
 
 export const Books: React.FC<BooksProps> = ({
   lang = 'hi',
   onNavigateHome,
   onSelectBook,
-  onOpenBookBuilder
+  onOpenBookBuilder,
+  onOpenLibrary
 }) => {
   const isHi = lang === 'hi';
 
@@ -583,6 +585,17 @@ export const Books: React.FC<BooksProps> = ({
                         <span>{isHi ? 'पृष्ठ क्रम' : 'Pages'}</span>
                       </button>
 
+                      {onOpenLibrary && (
+                        <button
+                          type="button"
+                          onClick={() => onOpenLibrary(book.id)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-vedic-700 hover:bg-vedic-800 text-white font-bold text-xs font-devanagari transition-colors shadow-2xs"
+                          title={isHi ? 'पुस्तकालय व भजन वाचन' : 'Open Library'}
+                        >
+                          <BookMarked className="w-3.5 h-3.5 text-amber-300" />
+                          <span>{isHi ? 'पुस्तकालय' : 'Library'}</span>
+                        </button>
+                      )}
                       {onOpenBookBuilder && (
                         <button
                           type="button"

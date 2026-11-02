@@ -1,0 +1,10 @@
+{
+  "book_id": "test-export-book-1",
+  "book_name": "श्री राम चरित मानस",
+  "language": "hin",
+  "total_book_pages": 5,
+  "exported_pages_count": 0,
+  "export_timestamp": "2026-11-02T17:51:36.239277",
+  "format": "json",
+  "pages": []
+}

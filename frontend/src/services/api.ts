@@ -19,7 +19,10 @@ import type {
   BookBuilderResponse,
   BuilderHistoryEntry,
   BuilderStageComparisonItem,
-  BuilderDraftItem
+  BuilderDraftItem,
+  BhajanSearchFilter,
+  BookBhajansResponse,
+  BhajanSearchResponse
 } from '../types';
 
 export const BACKEND_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
@@ -487,5 +490,15 @@ export const api = {
     });
     return handleResponse(res, 'Failed to load builder draft');
   },
-};
 
+  async getBookBhajans(bookId: string): Promise<BookBhajansResponse> {
+    const res = await fetch(`${API_BASE}/books/${bookId}/bhajans`);
+    return handleResponse(res, 'Failed to fetch book bhajans');
+  },
+
+  async searchBookBhajans(bookId: string, query: string, filter: BhajanSearchFilter = 'all'): Promise<BhajanSearchResponse> {
+    const params = new URLSearchParams({ q: query, filter });
+    const res = await fetch(`${API_BASE}/books/${bookId}/search?${params.toString()}`);
+    return handleResponse(res, 'Failed to search bhajans');
+  },
+};

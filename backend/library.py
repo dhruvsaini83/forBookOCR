@@ -92,7 +92,6 @@ def _extract_starting_lines(lines: List[str], max_lines: int = 2) -> str:
     cleaned = []
     for line in lines:
         stripped = line.strip()
-        # Skip header patterns
         if not stripped:
             continue
         if re.match(r'^(?:Page|पृष्ठ)\s*[०-९0-9]+', stripped, re.IGNORECASE):
@@ -101,6 +100,10 @@ def _extract_starting_lines(lines: List[str], max_lines: int = 2) -> str:
             continue
         if stripped.startswith('---'):
             continue
+        if re.match(r'^[॥\(\*].+[॥\)\*]$', stripped):
+            continue
+        if re.match(r'^(?:शीर्षक|नाम|राग)\s*[:\-\–\—]', stripped, re.IGNORECASE):
+            continue
         cleaned.append(stripped)
         if len(cleaned) >= max_lines:
             break
@@ -108,15 +111,31 @@ def _extract_starting_lines(lines: List[str], max_lines: int = 2) -> str:
 
 
 def _detect_explicit_title(lines: List[str], header_line_idx: int) -> str:
-    """Detects if an explicit title was authored on the line right after the bhajan header,
-    or enclosed in devotional title brackets (e.g. **॥ ... ॥** or ॥ ... ॥).
-
+    """Detects if an explicit title was authored on the header line or marked on the line right after.
     STRICT POLICY: If no explicit authored title is present, returns 'unknown'.
     Never invents or fabricates AI title names.
     """
+    if 0 <= header_line_idx < len(lines):
+        header = lines[header_line_idx].strip()
+        header_title_match = re.search(
+            r'^(?:भजन|पद|गीत|दोहा)\s*(?:क्रमांक|संख्या|नं\.?|नंबर)?\s*[०-९0-9]+\s*[:\-\–\—\.]\s*(.+)$',
+            header,
+            re.IGNORECASE
+        )
+        if header_title_match:
+            candidate = header_title_match.group(1).strip()
+            clean = re.sub(r'[*॥\(\)]', '', candidate).strip()
+            if 2 <= len(clean) <= 60:
+                return clean
+
+        bracket_in_header = re.search(r'[॥\(\[]\s*([^॥\)\]]+?)\s*[॥\)\]]', header)
+        if bracket_in_header:
+            clean = bracket_in_header.group(1).replace('*', '').strip()
+            if 2 <= len(clean) <= 60 and not re.match(r'^[०-९0-9]+$', clean):
+                return clean
+
     if header_line_idx + 1 < len(lines):
         candidate = lines[header_line_idx + 1].strip()
-        # Check if marked with brackets or bold markers
         bracket_match = re.search(r'॥\s*(.+?)\s*॥', candidate)
         if bracket_match:
             clean = bracket_match.group(1).replace('*', '').strip()
@@ -129,14 +148,9 @@ def _detect_explicit_title(lines: List[str], header_line_idx: int) -> str:
             if 2 <= len(clean) <= 60:
                 return clean
 
-        # Check for explicit "शीर्षक: ..." prefix
-        prefix_match = re.match(r'^(?:शीर्षक|नाम)\s*[:\-]\s*(.+)$', candidate)
+        prefix_match = re.match(r'^(?:शीर्षक|नाम|राग)\s*[:\-\–\—]\s*(.+)$', candidate, re.IGNORECASE)
         if prefix_match:
             return prefix_match.group(1).strip()
-
-        # If a short standalone line (<40 chars) without verse endings (। or ॥)
-        if 2 <= len(candidate) <= 40 and not any(ch in candidate for ch in ('।', '॥', ',')):
-            return candidate
 
     return "unknown"
 
@@ -275,12 +289,16 @@ def get_book_bhajans(book_id: str) -> List[Dict[str, Any]]:
     init_library_tables()
     builder = get_or_create_book_builder(book_id)
     combined_text = builder.get("combined_text") or ""
+    pages = get_pages_for_book(book_id, sort_by="page_number")
+
+    # If builder has no combined text yet, synthesize from book pages if available
+    if not combined_text.strip() and pages:
+        from core.database import regenerate_combined_text
+        page_order = [int(p["page_number"]) for p in pages if p.get("page_number") is not None]
+        combined_text = regenerate_combined_text(pages, page_order)
 
     # Parse fresh from combined text
     bhajans = parse_combined_text_to_bhajans(combined_text)
-
-    # Attach page image URLs from pages table
-    pages = get_pages_for_book(book_id, sort_by="page_number")
     page_img_map = {}
     for p in pages:
         p_num = p.get("page_number")

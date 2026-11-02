@@ -2290,6 +2290,53 @@ def load_builder_draft_endpoint(book_id: str, draft_id: str):
     }
 
 
+# ==========================================
+# Heritage Library Endpoints
+# ==========================================
+from library import get_book_bhajans, search_book_bhajans
+
+
+@app.get("/api/books/{book_id}/bhajans")
+def get_book_bhajans_endpoint(book_id: str):
+    book = db.get_book_by_id(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail=f"Book with ID '{book_id}' not found.")
+    bhajans = get_book_bhajans(book_id)
+    return {
+        "success": True,
+        "book_id": book_id,
+        "book_name": book.get("name"),
+        "total": len(bhajans),
+        "count": len(bhajans),
+        "bhajans": bhajans
+    }
+
+
+@app.get("/api/books/{book_id}/search")
+def search_book_bhajans_endpoint(
+    book_id: str,
+    q: str = Query(..., description="Search query string"),
+    filter: str = Query("all", description="Search filter: all | title | number | content | starting_lines")
+):
+    book = db.get_book_by_id(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail=f"Book with ID '{book_id}' not found.")
+    valid_filters = {"all", "title", "number", "content", "starting_lines"}
+    selected_filter = filter if filter in valid_filters else "all"
+    results = search_book_bhajans(book_id, q, filter_type=selected_filter)
+    return {
+        "success": True,
+        "book_id": book_id,
+        "book_name": book.get("name"),
+        "query": q,
+        "filter": selected_filter,
+        "total": len(results),
+        "count": len(results),
+        "results": results,
+        "bhajans": results
+    }
+
+
 # Mount built frontend assets if dist exists
 FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
 if FRONTEND_DIST.exists():
