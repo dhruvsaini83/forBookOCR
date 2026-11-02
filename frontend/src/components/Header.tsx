@@ -60,33 +60,33 @@ export const Header: React.FC<HeaderProps> = ({
   return (
     <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-stone-200/90 shadow-2xs">
       <div className="max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16 sm:h-20 gap-2">
-          {/* Brand & Title */}
-          <div className="flex items-center gap-2 sm:gap-3.5 min-w-0 shrink">
+        <div className="flex items-center justify-between h-16 sm:h-20 gap-3">
+          {/* Brand & Title (Fixed non-collapsible width) */}
+          <div className="flex items-center gap-2 sm:gap-3.5 shrink-0">
             <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl sm:rounded-2xl bg-gradient-to-tr from-vedic-700 via-vedic-600 to-saffron-500 p-0.5 shadow-2xs flex items-center justify-center shrink-0">
               <div className="w-full h-full bg-vedic-950 rounded-[10px] sm:rounded-[13px] flex items-center justify-center text-white font-bold text-lg sm:text-2xl font-traditional">
                 वा
               </div>
             </div>
-            <div className="min-w-0">
+            <div className="shrink-0">
               <div className="flex items-center gap-1.5 sm:gap-2">
-                <h1 className="text-lg sm:text-2xl font-bold font-devanagari text-vedic-950 tracking-tight truncate">
+                <h1 className="text-base sm:text-xl md:text-2xl font-bold font-devanagari text-vedic-950 tracking-tight whitespace-nowrap">
                   {t.appTitle}
                 </h1>
-                <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-300 shrink-0">
+                <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-300 shrink-0">
                   <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
                   <span>{lang === 'hi' ? '५-चरणीय सत्यापन' : '5-Stage Verified'}</span>
                 </span>
               </div>
-              <p className="text-[11px] text-stone-500 hidden md:block font-devanagari truncate">
+              <p className="text-[11px] text-stone-500 hidden md:block font-devanagari whitespace-nowrap">
                 {t.appSubtitle}
               </p>
             </div>
           </div>
 
-          {/* Center: Active Document Badge (Desktop) */}
+          {/* Center: Active Document Badge (Large Screens Only) */}
           {activeDocTitle && (
-            <div className="hidden xl:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-vedic-50/80 border border-vedic-200 max-w-xs truncate shadow-2xs">
+            <div className="hidden 2xl:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-vedic-50/80 border border-vedic-200 max-w-xs truncate shadow-2xs shrink">
               <BookOpen className="w-4 h-4 text-vedic-700 shrink-0" />
               <span className="text-xs font-medium text-vedic-950 truncate font-devanagari">
                 {activeDocTitle}
@@ -95,57 +95,22 @@ export const Header: React.FC<HeaderProps> = ({
           )}
 
           {/* Desktop Navigation Action Buttons (>= 768px) */}
-          <div className="hidden md:flex items-center gap-2 shrink-0">
+          <div className="hidden md:flex items-center gap-1.5 lg:gap-2 shrink-0">
             <button
               type="button"
               onClick={onOpenUpload}
-              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-vedic-700 hover:bg-vedic-800 active:bg-vedic-900 text-white font-medium text-xs sm:text-sm shadow-xs transition-colors font-devanagari"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl bg-vedic-700 hover:bg-vedic-800 active:bg-vedic-900 text-white font-medium text-xs sm:text-sm shadow-xs transition-colors font-devanagari shrink-0 cursor-pointer"
               aria-label={t.navUpload}
             >
-              <UploadCloud className="w-4 h-4" />
-              <span>{t.navUpload}</span>
+              <UploadCloud className="w-4 h-4 shrink-0" />
+              <span className="whitespace-nowrap">{t.navUpload}</span>
             </button>
-
-            {onOpenVerify && (
-              <button
-                type="button"
-                onClick={onOpenVerify}
-                className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs sm:text-sm transition-colors font-devanagari ${
-                  activeView === 'verify'
-                    ? 'bg-amber-50 border-amber-300 text-amber-900 font-bold shadow-2xs'
-                    : 'border-stone-200 hover:bg-stone-50 text-stone-700 font-medium'
-                }`}
-                title={lang === 'hi' ? 'सत्यापन व शिक्षण' : 'Verify & Learn'}
-                aria-label={lang === 'hi' ? 'सत्यापन व शिक्षण' : 'Verify & Learn'}
-              >
-                <BrainCircuit className="w-4 h-4 text-amber-600" />
-                <span>{lang === 'hi' ? 'सत्यापन' : 'Verify'}</span>
-              </button>
-            )}
-
-            {onOpenVerify && (
-              <button
-                type="button"
-                onClick={() => {
-                  onOpenVerify();
-                  setMobileMenuOpen(false);
-                }}
-                className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl border text-xs font-devanagari text-left transition-colors ${
-                  activeView === 'verify'
-                    ? 'bg-amber-50 border-amber-300 text-amber-900 font-bold'
-                    : 'border-stone-200 hover:bg-stone-50 text-stone-700 font-medium'
-                }`}
-              >
-                <BrainCircuit className="w-4 h-4 text-amber-600" />
-                <span>{lang === 'hi' ? 'सत्यापन व शिक्षण' : 'Verify & Learn'}</span>
-              </button>
-            )}
 
             {onOpenBooks && (
               <button
                 type="button"
                 onClick={onOpenBooks}
-                className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs sm:text-sm transition-colors font-devanagari ${
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl border text-xs sm:text-sm transition-colors font-devanagari shrink-0 cursor-pointer ${
                   activeView === 'books'
                     ? 'bg-vedic-50 border-vedic-300 text-vedic-900 font-bold shadow-2xs'
                     : 'border-stone-200 hover:bg-stone-50 text-stone-700 font-medium'
@@ -153,54 +118,71 @@ export const Header: React.FC<HeaderProps> = ({
                 title={lang === 'hi' ? 'ग्रन्थ संग्रह' : 'Books'}
                 aria-label={lang === 'hi' ? 'ग्रन्थ संग्रह' : 'Books'}
               >
-                <BookOpen className="w-4 h-4 text-vedic-700" />
-                <span>{lang === 'hi' ? 'ग्रन्थ संग्रह' : 'Books'}</span>
+                <BookOpen className="w-4 h-4 text-vedic-700 shrink-0" />
+                <span className="whitespace-nowrap">{lang === 'hi' ? 'ग्रन्थ संग्रह' : 'Books'}</span>
+              </button>
+            )}
+
+            {onOpenVerify && (
+              <button
+                type="button"
+                onClick={onOpenVerify}
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl border text-xs sm:text-sm transition-colors font-devanagari shrink-0 cursor-pointer ${
+                  activeView === 'verify'
+                    ? 'bg-amber-50 border-amber-300 text-amber-900 font-bold shadow-2xs'
+                    : 'border-stone-200 hover:bg-stone-50 text-stone-700 font-medium'
+                }`}
+                title={lang === 'hi' ? 'सत्यापन व शिक्षण' : 'Verify & Learn'}
+                aria-label={lang === 'hi' ? 'सत्यापन व शिक्षण' : 'Verify & Learn'}
+              >
+                <BrainCircuit className="w-4 h-4 text-amber-600 shrink-0" />
+                <span className="whitespace-nowrap">{lang === 'hi' ? 'सत्यापन' : 'Verify'}</span>
               </button>
             )}
 
             <button
               type="button"
               onClick={onOpenHistory}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-stone-200 hover:bg-stone-50 text-stone-700 font-medium text-xs sm:text-sm transition-colors font-devanagari"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl border border-stone-200 hover:bg-stone-50 text-stone-700 font-medium text-xs sm:text-sm transition-colors font-devanagari shrink-0 cursor-pointer"
               title={t.navHistory}
               aria-label={t.navHistory}
             >
-              <FileText className="w-4 h-4 text-vedic-700" />
-              <span>{t.navHistory}</span>
+              <FileText className="w-4 h-4 text-vedic-700 shrink-0" />
+              <span className="whitespace-nowrap">{t.navHistory}</span>
             </button>
 
             <button
               type="button"
               onClick={onOpenSamples}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-stone-200 hover:bg-stone-50 text-stone-700 font-medium text-xs sm:text-sm transition-colors font-devanagari"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl border border-stone-200 hover:bg-stone-50 text-stone-700 font-medium text-xs sm:text-sm transition-colors font-devanagari shrink-0 cursor-pointer"
               title={t.navSamples}
               aria-label={t.navSamples}
             >
-              <Sparkles className="w-4 h-4 text-amber-600" />
-              <span>{t.navSamples}</span>
+              <Sparkles className="w-4 h-4 text-amber-600 shrink-0" />
+              <span className="whitespace-nowrap">{t.navSamples}</span>
             </button>
 
             <button
               type="button"
               onClick={onOpenBenchmark}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-stone-200 hover:bg-stone-50 text-stone-700 font-medium text-xs sm:text-sm transition-colors font-devanagari"
+              className="hidden lg:inline-flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl border border-stone-200 hover:bg-stone-50 text-stone-700 font-medium text-xs sm:text-sm transition-colors font-devanagari shrink-0 cursor-pointer"
               title={t.navBenchmark}
               aria-label={t.navBenchmark}
             >
-              <BarChart3 className="w-4 h-4 text-indigo-600" />
-              <span>{t.navBenchmark}</span>
+              <BarChart3 className="w-4 h-4 text-indigo-600 shrink-0" />
+              <span className="whitespace-nowrap">{t.navBenchmark}</span>
             </button>
 
             {/* Desktop Hindi / English Segmented Switch */}
             <div 
               role="group" 
               aria-label="Language selection" 
-              className="flex items-center bg-stone-100 p-0.5 rounded-xl border border-stone-200/90 shadow-2xs ml-1"
+              className="flex items-center bg-stone-100 p-0.5 rounded-xl border border-stone-200/90 shadow-2xs ml-0.5 shrink-0"
             >
               <button
                 type="button"
                 onClick={() => handleSelectLanguage('hi')}
-                className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-devanagari transition-all duration-150 ${
+                className={`flex items-center gap-1 px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-lg text-xs font-devanagari transition-all duration-150 cursor-pointer ${
                   lang === 'hi'
                     ? 'bg-vedic-700 text-white font-bold shadow-xs'
                     : 'text-stone-600 hover:text-stone-900 font-medium'
@@ -214,7 +196,7 @@ export const Header: React.FC<HeaderProps> = ({
               <button
                 type="button"
                 onClick={() => handleSelectLanguage('en')}
-                className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-sans transition-all duration-150 ${
+                className={`flex items-center gap-1 px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-lg text-xs font-sans transition-all duration-150 cursor-pointer ${
                   lang === 'en'
                     ? 'bg-vedic-700 text-white font-bold shadow-xs'
                     : 'text-stone-600 hover:text-stone-900 font-medium'
@@ -263,11 +245,11 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
             </div>
 
-            {/* Quick Upload Icon Button */}
+            {/* Quick Upload Button (Mobile) */}
             <button
               type="button"
               onClick={onOpenUpload}
-              className="p-2 rounded-xl bg-vedic-700 hover:bg-vedic-800 text-white shadow-2xs transition-colors"
+              className="p-2 rounded-xl bg-vedic-700 hover:bg-vedic-800 text-white shadow-2xs transition-colors cursor-pointer"
               title={t.navUpload}
               aria-label={t.navUpload}
             >
@@ -278,7 +260,7 @@ export const Header: React.FC<HeaderProps> = ({
             <button
               type="button"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="p-2 rounded-xl border border-stone-200 bg-white hover:bg-stone-50 text-stone-700 transition-colors"
+              className="p-2 rounded-xl border border-stone-200 bg-white hover:bg-stone-50 text-stone-700 transition-colors cursor-pointer"
               title={mobileMenuOpen ? t.close : t.menu}
               aria-label={mobileMenuOpen ? t.close : t.menu}
               aria-expanded={mobileMenuOpen}
@@ -316,6 +298,42 @@ export const Header: React.FC<HeaderProps> = ({
               <span>{t.navUpload}</span>
             </button>
 
+            {onOpenBooks && (
+              <button
+                type="button"
+                onClick={() => {
+                  onOpenBooks();
+                  setMobileMenuOpen(false);
+                }}
+                className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl border text-xs font-devanagari text-left transition-colors ${
+                  activeView === 'books'
+                    ? 'bg-vedic-50 border-vedic-300 text-vedic-900 font-bold'
+                    : 'border-stone-200 hover:bg-stone-50 text-stone-800 font-medium'
+                }`}
+              >
+                <BookOpen className="w-4 h-4 text-vedic-700" />
+                <span>{lang === 'hi' ? 'ग्रन्थ संग्रह' : 'Books'}</span>
+              </button>
+            )}
+
+            {onOpenVerify && (
+              <button
+                type="button"
+                onClick={() => {
+                  onOpenVerify();
+                  setMobileMenuOpen(false);
+                }}
+                className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl border text-xs font-devanagari text-left transition-colors ${
+                  activeView === 'verify'
+                    ? 'bg-amber-50 border-amber-300 text-amber-900 font-bold'
+                    : 'border-stone-200 hover:bg-stone-50 text-stone-800 font-medium'
+                }`}
+              >
+                <BrainCircuit className="w-4 h-4 text-amber-600" />
+                <span>{lang === 'hi' ? 'सत्यापन व शिक्षण' : 'Verify & Learn'}</span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={() => {
@@ -324,7 +342,7 @@ export const Header: React.FC<HeaderProps> = ({
               }}
               className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl border border-stone-200 hover:bg-stone-50 text-stone-800 font-medium text-xs font-devanagari text-left"
             >
-              <BookOpen className="w-4 h-4 text-vedic-700" />
+              <FileText className="w-4 h-4 text-vedic-700" />
               <span>{t.navHistory}</span>
             </button>
 
