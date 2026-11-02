@@ -551,4 +551,42 @@ export const api = {
     }
     return `${API_BASE}/books/${bookId}/export?${params.toString()}`;
   },
+  async createCorrection(payload: {
+    page_id: string;
+    bbox?: { x: number; y: number; w: number; h: number } | [number, number, number, number];
+    ocr_text: string;
+    corrected_text: string;
+    engine?: string;
+    book_id?: string | null;
+  }): Promise<{
+    success: boolean;
+    correction_id: string;
+    crop_url: string;
+    crop_image_path?: string;
+    learned_word?: { id: string; word: string; frequency: number };
+    confusion_pairs?: Array<{ wrong_char: string; correct_char: string; count: number }>;
+  }> {
+    const res = await fetch(`${API_BASE}/corrections`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return handleResponse(res, 'Failed to save correction');
+  },
+
+  async getLearnedWords(bookId?: string | null, limit = 100) {
+    const params = new URLSearchParams();
+    if (bookId) params.append('book_id', bookId);
+    params.append('limit', String(limit));
+    const res = await fetch(`${API_BASE}/learned-words?${params.toString()}`);
+    return handleResponse(res, 'Failed to fetch learned words');
+  },
+
+  async getConfusionPairs(bookId?: string | null, limit = 100) {
+    const params = new URLSearchParams();
+    if (bookId) params.append('book_id', bookId);
+    params.append('limit', String(limit));
+    const res = await fetch(`${API_BASE}/confusion-pairs?${params.toString()}`);
+    return handleResponse(res, 'Failed to fetch confusion pairs');
+  },
 };

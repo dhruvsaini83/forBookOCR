@@ -19,6 +19,7 @@ import { BookBuilder } from './pages/BookBuilder';
 import { CombinedEditor } from './pages/CombinedEditor';
 import { Library } from './pages/Library';
 import { BookExport } from './pages/BookExport';
+import { Verify } from './pages/Verify';
 import type { Language } from './i18n/translations';
 import { translations } from './i18n/translations';
 import type { DocumentData, PageData, WordToken } from './types';
@@ -42,8 +43,11 @@ export const App: React.FC = () => {
     pages: any[];
   } | null>(null);
 
-  // Top-level Navigation View ('scanner' | 'books' | 'builder' | 'combined-editor' | 'library' | 'export')
-  const [currentView, setCurrentView] = useState<'scanner' | 'books' | 'builder' | 'combined-editor' | 'library' | 'export'>(() => {
+  // Top-level Navigation View ('scanner' | 'books' | 'builder' | 'combined-editor' | 'library' | 'export' | 'verify')
+  const [currentView, setCurrentView] = useState<'scanner' | 'books' | 'builder' | 'combined-editor' | 'library' | 'export' | 'verify'>(() => {
+    if (typeof window !== 'undefined' && window.location.pathname.includes('/verify')) {
+      return 'verify';
+    }
     if (typeof window !== 'undefined' && window.location.pathname.includes('/export')) {
       return 'export';
     }
@@ -216,8 +220,22 @@ export const App: React.FC = () => {
   const handleApplyWordCorrection = async (wordIndex: number, newText: string, reason = 'manual_correction') => {
     if (!currentDoc || !currentPage) return;
     try {
+      const token = currentPage.word_tokens?.[wordIndex];
+      const origWord = token?.original_text || token?.text || '';
+      const bbox = token?.bbox || [0, 0, 0, 0];
+
       const res = await api.updateWord(currentDoc.id, currentPageNum, wordIndex, newText, reason);
       if (res.success) {
+        if (origWord && newText.trim() !== origWord.trim()) {
+          api.createCorrection({
+            page_id: currentPage.id,
+            bbox: bbox,
+            ocr_text: origWord,
+            corrected_text: newText.trim(),
+            engine: currentPage.ocr_engine || 'tesseract',
+            book_id: currentPage.book_id
+          }).catch(console.error);
+        }
         // Refresh current page
         const updatedPage = await api.getPage(currentDoc.id, currentPageNum);
         setCurrentPage(updatedPage);
@@ -277,12 +295,39 @@ export const App: React.FC = () => {
             window.history.pushState({}, '', nextView === 'books' ? '/books' : '/');
           }
         }}
+        onOpenVerify={() => {
+          const nextView = currentView === 'verify' ? 'scanner' : 'verify';
+          setCurrentView(nextView);
+          if (typeof window !== 'undefined') {
+            window.history.pushState({}, '', nextView === 'verify' ? '/verify' : '/');
+          }
+        }}
         activeView={currentView}
         activeDocTitle={currentDoc?.title}
       />
 
       {/* View Switcher: Export vs Library vs Combined Editor vs Book Builder vs Books Management vs OCR Scanner Workspace */}
-      {currentView === 'export' && selectedBookIdForBuilder ? (
+      {currentView === 'verify' ? (
+        <Verify
+          initialBookId={selectedBookIdForBuilder}
+          initialDocId={currentDoc?.id}
+          initialPageNumber={currentPageNum}
+          lang={lang}
+          onBackToBooks={() => {
+            setCurrentView('books');
+            if (typeof window !== 'undefined') {
+              window.history.pushState({}, '', '/books');
+            }
+          }}
+          onNavigateToBuilder={(bookId) => {
+            setSelectedBookIdForBuilder(bookId);
+            setCurrentView('builder');
+            if (typeof window !== 'undefined') {
+              window.history.pushState({}, '', `/builder/${bookId}`);
+            }
+          }}
+        />
+      ) : currentView === 'export' && selectedBookIdForBuilder ? (
         <BookExport
           bookId={selectedBookIdForBuilder}
           lang={lang}

@@ -225,6 +225,23 @@ def upload_processed(book_id: str, page_number: int, file_bytes: bytes) -> str:
     return _stage_and_upload(path, file_bytes, content_type)
 
 
+
+
+def upload_crop(book_id: Optional[str], correction_id: str, file_bytes: bytes) -> str:
+    """Uploads an extracted word-level image crop to crops/{book_id}/{correction_id}.jpg."""
+    if not file_bytes:
+        raise ValueError("Crop image file is empty.")
+    try:
+        content_type = validate_file(file_bytes)
+    except Exception:
+        content_type = "image/jpeg"
+
+    book_str = str(book_id).strip() if book_id else "general"
+    corr_str = str(correction_id).strip()
+    target_path = f"crops/{book_str}/{corr_str}.jpg"
+    return _stage_and_upload(target_path, file_bytes, content_type)
+
+
 def upload_export(book_id: str, filename: str, file_bytes: bytes) -> str:
     """Uploads an exported publication (PDF, DOCX, TXT, JSON) to exports/{book_id}/{filename}."""
     if not file_bytes:

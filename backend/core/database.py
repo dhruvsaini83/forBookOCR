@@ -221,6 +221,54 @@ def init_db():
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_pages_phash ON pages(phash)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_pages_book_page_order ON pages(book_id, page_number, upload_order)")
 
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS corrections (
+        id TEXT PRIMARY KEY,
+        book_id TEXT,
+        page_id TEXT,
+        bbox TEXT NOT NULL DEFAULT '{}',
+        crop_image_path TEXT NOT NULL,
+        ocr_text TEXT NOT NULL,
+        corrected_text TEXT NOT NULL,
+        engine TEXT NOT NULL DEFAULT 'tesseract',
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE SET NULL,
+        FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
+    );
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_corrections_book_id ON corrections(book_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_corrections_page_id ON corrections(page_id)")
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS learned_words (
+        id TEXT PRIMARY KEY,
+        word TEXT NOT NULL,
+        frequency INTEGER NOT NULL DEFAULT 1,
+        book_id TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
+    );
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_learned_words_word ON learned_words(word)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_learned_words_book_id ON learned_words(book_id)")
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS confusion_pairs (
+        id TEXT PRIMARY KEY,
+        wrong_char TEXT NOT NULL,
+        correct_char TEXT NOT NULL,
+        count INTEGER NOT NULL DEFAULT 1,
+        book_id TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
+    );
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_confusion_pairs_chars ON confusion_pairs(wrong_char, correct_char)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_confusion_pairs_book_id ON confusion_pairs(book_id)")
+
+
     conn.commit()
     conn.close()
 
@@ -1413,3 +1461,202 @@ def load_builder_draft(book_id: str, draft_id: str) -> Optional[Dict[str, Any]]:
     d = dict(row)
     update_book_builder_text(book_id, d["combined_text"])
     return d
+
+
+
+# ============================================================================
+# OCR Learning & Correction Loop Operations
+# ============================================================================
+
+def save_correction(
+    correction_id: str,
+    book_id: Optional[str],
+    page_id: Optional[str],
+    bbox: Any,
+    crop_image_path: str,
+    ocr_text: str,
+    corrected_text: str,
+    engine: str = "tesseract"
+) -> Dict[str, Any]:
+    """Persists an individual word/character correction with its bounding box and crop reference."""
+    now = datetime.now().isoformat()
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    bbox_str = json.dumps(bbox, ensure_ascii=False) if isinstance(bbox, (dict, list)) else str(bbox or "{}")
+    b_id = str(book_id) if book_id else None
+    p_id = str(page_id) if page_id else None
+
+    cursor.execute("""
+        INSERT INTO corrections (id, book_id, page_id, bbox, crop_image_path, ocr_text, corrected_text, engine, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (str(correction_id), b_id, p_id, bbox_str, crop_image_path, ocr_text, corrected_text, engine, now))
+    
+    conn.commit()
+    conn.close()
+    
+    return {
+        "id": str(correction_id),
+        "book_id": b_id,
+        "page_id": p_id,
+        "bbox": bbox if isinstance(bbox, (dict, list)) else json.loads(bbox_str),
+        "crop_image_path": crop_image_path,
+        "ocr_text": ocr_text,
+        "corrected_text": corrected_text,
+        "engine": engine,
+        "created_at": now
+    }
+
+
+def increment_learned_word(word: str, book_id: Optional[str] = None) -> Dict[str, Any]:
+    """Increments verification frequency of a learned word in dictionary or creates a new entry."""
+    now = datetime.now().isoformat()
+    clean_word = word.strip()
+    if not clean_word:
+        return {"word": "", "frequency": 0}
+        
+    b_id = str(book_id) if book_id else None
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    if b_id:
+        cursor.execute("SELECT id, frequency FROM learned_words WHERE word = ? AND book_id = ?", (clean_word, b_id))
+    else:
+        cursor.execute("SELECT id, frequency FROM learned_words WHERE word = ? AND book_id IS NULL", (clean_word,))
+    
+    row = cursor.fetchone()
+    if row:
+        record_id = row["id"]
+        new_freq = row["frequency"] + 1
+        cursor.execute("UPDATE learned_words SET frequency = ?, updated_at = ? WHERE id = ?", (new_freq, now, record_id))
+    else:
+        record_id = str(uuid.uuid4())
+        new_freq = 1
+        cursor.execute("""
+            INSERT INTO learned_words (id, word, frequency, book_id, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (record_id, clean_word, new_freq, b_id, now, now))
+
+    conn.commit()
+    conn.close()
+
+    return {
+        "id": record_id,
+        "word": clean_word,
+        "frequency": new_freq,
+        "book_id": b_id
+    }
+
+
+def record_confusion_pair(wrong_char: str, correct_char: str, book_id: Optional[str] = None) -> Dict[str, Any]:
+    """Records or increments character confusion frequency between OCR reading and verified text."""
+    now = datetime.now().isoformat()
+    b_id = str(book_id) if book_id else None
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    if b_id:
+        cursor.execute(
+            "SELECT id, count FROM confusion_pairs WHERE wrong_char = ? AND correct_char = ? AND book_id = ?",
+            (wrong_char, correct_char, b_id)
+        )
+    else:
+        cursor.execute(
+            "SELECT id, count FROM confusion_pairs WHERE wrong_char = ? AND correct_char = ? AND book_id IS NULL",
+            (wrong_char, correct_char)
+        )
+    
+    row = cursor.fetchone()
+    if row:
+        pair_id = row["id"]
+        new_count = row["count"] + 1
+        cursor.execute("UPDATE confusion_pairs SET count = ?, updated_at = ? WHERE id = ?", (new_count, now, pair_id))
+    else:
+        pair_id = str(uuid.uuid4())
+        new_count = 1
+        cursor.execute("""
+            INSERT INTO confusion_pairs (id, wrong_char, correct_char, count, book_id, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (pair_id, wrong_char, correct_char, new_count, b_id, now, now))
+
+    conn.commit()
+    conn.close()
+
+    return {
+        "id": pair_id,
+        "wrong_char": wrong_char,
+        "correct_char": correct_char,
+        "count": new_count,
+        "book_id": b_id
+    }
+
+
+def get_corrections(book_id: Optional[str] = None, page_id: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
+    """Retrieves list of word corrections filtered by book or page."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    query = "SELECT * FROM corrections"
+    params = []
+    clauses = []
+    if book_id:
+        clauses.append("book_id = ?")
+        params.append(str(book_id))
+    if page_id:
+        clauses.append("page_id = ?")
+        params.append(str(page_id))
+    if clauses:
+        query += " WHERE " + " AND ".join(clauses)
+    query += " ORDER BY created_at DESC LIMIT ?"
+    params.append(limit)
+
+    cursor.execute(query, tuple(params))
+    rows = cursor.fetchall()
+    conn.close()
+
+    results = []
+    for r in rows:
+        d = dict(r)
+        try:
+            d["bbox"] = json.loads(d.get("bbox") or "{}")
+        except Exception:
+            pass
+        results.append(d)
+    return results
+
+
+def get_learned_words(book_id: Optional[str] = None, limit: int = 100) -> List[Dict[str, Any]]:
+    """Retrieves most frequently learned/verified vocabulary words."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    if book_id:
+        cursor.execute(
+            "SELECT * FROM learned_words WHERE book_id = ? ORDER BY frequency DESC, updated_at DESC LIMIT ?",
+            (str(book_id), limit)
+        )
+    else:
+        cursor.execute(
+            "SELECT * FROM learned_words ORDER BY frequency DESC, updated_at DESC LIMIT ?",
+            (limit,)
+        )
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_confusion_pairs(book_id: Optional[str] = None, limit: int = 100) -> List[Dict[str, Any]]:
+    """Retrieves top character confusion pairs ordered by occurrence count."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    if book_id:
+        cursor.execute(
+            "SELECT * FROM confusion_pairs WHERE book_id = ? ORDER BY count DESC, updated_at DESC LIMIT ?",
+            (str(book_id), limit)
+        )
+    else:
+        cursor.execute(
+            "SELECT * FROM confusion_pairs ORDER BY count DESC, updated_at DESC LIMIT ?",
+            (limit,)
+        )
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]

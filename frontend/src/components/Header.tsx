@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   UploadCloud, BookOpen, FileText, BarChart3, Sparkles, Globe2, 
-  ShieldCheck, Menu, X 
+  ShieldCheck, Menu, X, BrainCircuit 
 } from 'lucide-react';
 import type { Language } from '../i18n/translations';
 import { translations } from '../i18n/translations';
@@ -15,7 +15,8 @@ interface HeaderProps {
   onOpenBenchmark: () => void;
   onOpenSamples: () => void;
   onOpenBooks?: () => void;
-  activeView?: 'scanner' | 'books' | 'builder' | 'combined-editor' | 'library' | 'export';
+  onOpenVerify?: () => void;
+  activeView?: 'scanner' | 'books' | 'builder' | 'combined-editor' | 'library' | 'export' | 'verify';
   activeDocTitle?: string;
 }
 
@@ -28,6 +29,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenBenchmark,
   onOpenSamples,
   onOpenBooks,
+  onOpenVerify,
   activeView = 'scanner',
   activeDocTitle,
 }) => {
@@ -103,6 +105,41 @@ export const Header: React.FC<HeaderProps> = ({
               <UploadCloud className="w-4 h-4" />
               <span>{t.navUpload}</span>
             </button>
+
+            {onOpenVerify && (
+              <button
+                type="button"
+                onClick={onOpenVerify}
+                className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs sm:text-sm transition-colors font-devanagari ${
+                  activeView === 'verify'
+                    ? 'bg-amber-50 border-amber-300 text-amber-900 font-bold shadow-2xs'
+                    : 'border-stone-200 hover:bg-stone-50 text-stone-700 font-medium'
+                }`}
+                title={lang === 'hi' ? 'सत्यापन व शिक्षण' : 'Verify & Learn'}
+                aria-label={lang === 'hi' ? 'सत्यापन व शिक्षण' : 'Verify & Learn'}
+              >
+                <BrainCircuit className="w-4 h-4 text-amber-600" />
+                <span>{lang === 'hi' ? 'सत्यापन' : 'Verify'}</span>
+              </button>
+            )}
+
+            {onOpenVerify && (
+              <button
+                type="button"
+                onClick={() => {
+                  onOpenVerify();
+                  setMobileMenuOpen(false);
+                }}
+                className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl border text-xs font-devanagari text-left transition-colors ${
+                  activeView === 'verify'
+                    ? 'bg-amber-50 border-amber-300 text-amber-900 font-bold'
+                    : 'border-stone-200 hover:bg-stone-50 text-stone-700 font-medium'
+                }`}
+              >
+                <BrainCircuit className="w-4 h-4 text-amber-600" />
+                <span>{lang === 'hi' ? 'सत्यापन व शिक्षण' : 'Verify & Learn'}</span>
+              </button>
+            )}
 
             {onOpenBooks && (
               <button

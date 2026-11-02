@@ -350,6 +350,146 @@ class CorrectionLog(Base):
         return f"<CorrectionLog(id={self.id}, doc_id='{self.document_id}', word_index={self.word_index})>"
 
 
+
+
+class Correction(Base):
+    """SQLAlchemy model representing an extracted character/word correction with image crop."""
+    __tablename__ = "corrections"
+
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    book_id = Column(
+        GUID(),
+        ForeignKey("books.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True
+    )
+    page_id = Column(
+        String(100),
+        ForeignKey("pages.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True
+    )
+    bbox = Column(Text, nullable=False, default="{}")  # JSON {x, y, w, h}
+    crop_image_path = Column(Text, nullable=False)  # crops/{book_id}/{correction_id}.jpg
+    ocr_text = Column(Text, nullable=False)  # e.g. "रम"
+    corrected_text = Column(Text, nullable=False)  # e.g. "राम"
+    engine = Column(String(50), nullable=False, default="tesseract")
+    created_at = Column(
+        DateTime,
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc)
+    )
+
+    book = relationship("Book")
+    page = relationship("Page")
+
+    def __repr__(self) -> str:
+        return f"<Correction(id='{self.id}', ocr='{self.ocr_text}', corrected='{self.corrected_text}', engine='{self.engine}')>"
+
+    def to_dict(self) -> Dict[str, Any]:
+        import json
+        bbox_val = {}
+        try:
+            bbox_val = json.loads(self.bbox) if self.bbox else {}
+        except Exception:
+            bbox_val = {}
+        return {
+            "id": str(self.id) if self.id else None,
+            "book_id": str(self.book_id) if self.book_id else None,
+            "page_id": self.page_id,
+            "bbox": bbox_val,
+            "crop_image_path": self.crop_image_path,
+            "ocr_text": self.ocr_text,
+            "corrected_text": self.corrected_text,
+            "engine": self.engine,
+            "created_at": self.created_at.isoformat() if self.created_at else None
+        }
+
+
+class LearnedWord(Base):
+    """SQLAlchemy model representing a verified vocabulary word and its frequency."""
+    __tablename__ = "learned_words"
+
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    word = Column(String(255), nullable=False, index=True)
+    frequency = Column(Integer, nullable=False, default=1)
+    book_id = Column(
+        GUID(),
+        ForeignKey("books.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True
+    )
+    created_at = Column(
+        DateTime,
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at = Column(
+        DateTime,
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc)
+    )
+
+    book = relationship("Book")
+
+    def __repr__(self) -> str:
+        return f"<LearnedWord(id='{self.id}', word='{self.word}', frequency={self.frequency})>"
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": str(self.id) if self.id else None,
+            "word": self.word,
+            "frequency": self.frequency,
+            "book_id": str(self.book_id) if self.book_id else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None
+        }
+
+
+class ConfusionPair(Base):
+    """SQLAlchemy model representing OCR character confusion pairs with occurrence count."""
+    __tablename__ = "confusion_pairs"
+
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    wrong_char = Column(String(50), nullable=False, index=True)
+    correct_char = Column(String(50), nullable=False, index=True)
+    count = Column(Integer, nullable=False, default=1)
+    book_id = Column(
+        GUID(),
+        ForeignKey("books.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True
+    )
+    created_at = Column(
+        DateTime,
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at = Column(
+        DateTime,
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc)
+    )
+
+    book = relationship("Book")
+
+    def __repr__(self) -> str:
+        return f"<ConfusionPair(id='{self.id}', wrong='{self.wrong_char}', correct='{self.correct_char}', count={self.count})>"
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": str(self.id) if self.id else None,
+            "wrong_char": self.wrong_char,
+            "correct_char": self.correct_char,
+            "count": self.count,
+            "book_id": str(self.book_id) if self.book_id else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None
+        }
+
+
 def get_engine(db_path=None):
     """Creates a SQLAlchemy engine configured for SQLite with WAL mode and foreign key enforcement."""
     target_path = str(db_path or DB_PATH)

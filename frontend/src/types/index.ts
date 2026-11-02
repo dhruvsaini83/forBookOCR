@@ -208,6 +208,8 @@ export interface ComparisonData {
 
 export interface PageData {
   id: string;
+  book_id?: string;
+  word_tokens_json?: string;
   document_id: string;
   page_number: number;
   upload_order?: number;

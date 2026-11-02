@@ -1,3 +1,6 @@
+import cv2
+import numpy as np
+import difflib
 import os
 import sys
 import uuid
@@ -5,7 +8,7 @@ import shutil
 import re
 import hashlib
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Dict, Any, Union
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Query, BackgroundTasks, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -137,6 +140,15 @@ class WordUpdateRequest(BaseModel):
     word_index: int
     corrected_text: str
     reason: Optional[str] = "manual_correction"
+
+
+class CorrectionRequest(BaseModel):
+    page_id: str
+    bbox: Optional[Union[Dict[str, Any], List[Any], str]] = None  # dict {x, y, w, h} or list [x, y, w, h]
+    ocr_text: str
+    corrected_text: str
+    engine: Optional[str] = "tesseract"
+    book_id: Optional[str] = None
 
 class PageTextUpdateRequest(BaseModel):
     verified_text: str
@@ -964,26 +976,6 @@ def reset_page_adjustment_endpoint(doc_id: str, page_number: int, run_ocr: bool 
         except Exception:
             pass
 
-    # Re-sync optimized derivative with original source image
-    opt_file = doc_upload_dir / f"page_{page_number}_optimized.webp"
-    try:
-        page_info = db.get_page_by_number(doc_id, page_number) or {}
-        prior_mode = (page_info.get("compression_metadata") or {}).get("mode", "smart")
-        comp_res = compress_image(str(src_file), str(opt_file), mode=prior_mode)
-        db.update_page_compression(
-            doc_id=doc_id,
-            page_number=page_number,
-            optimized_img=to_safe_rel_url(str(opt_file)),
-            compression_metadata=comp_res,
-            original_sha256=get_file_sha256(str(src_file))
-        )
-    except Exception:
-        if opt_file.exists():
-            try:
-                opt_file.unlink()
-            except Exception:
-                pass
-
     db.reset_page_adjustment(doc_id, page_number)
 
     if run_ocr:
@@ -1347,6 +1339,171 @@ def select_page_engine_endpoint(doc_id: str, page_number: int, req: SelectEngine
         "active_text": chosen_text,
         "qa_status": qa_report.get("overall_status")
     }
+
+
+@app.post("/api/corrections")
+def create_correction_endpoint(req: CorrectionRequest):
+    """
+    Submits a user-verified word correction:
+    1. Crops the corresponding word bounding box from the original page image with OpenCV: img[y:y+h, x:x+w]
+    2. Uploads the cropped image to R2 under crops/{book_id}/{correction_id}.jpg
+    3. Persists record into 'corrections' table
+    4. Increments frequency in 'learned_words' (+1)
+    5. Detects character-level confusion pairs ('ocr_text' vs 'corrected_text') and updates 'confusion_pairs' (+1 count)
+    6. Returns: { success: True, correction_id: str, crop_url: str }
+    """
+    if not req.corrected_text or not req.corrected_text.strip():
+        raise HTTPException(status_code=400, detail="corrected_text is required.")
+        
+    correction_id = str(uuid.uuid4())
+    
+    # 1. Resolve Page & Book
+    page = db.get_page_by_id(req.page_id)
+    book_id = req.book_id or (page.get("book_id") if page else None)
+    
+    # Parse Bounding Box
+    bbox_dict = {"x": 0, "y": 0, "w": 0, "h": 0}
+    if isinstance(req.bbox, (list, tuple)) and len(req.bbox) >= 4:
+        bbox_dict = {
+            "x": int(req.bbox[0]),
+            "y": int(req.bbox[1]),
+            "w": int(req.bbox[2]),
+            "h": int(req.bbox[3])
+        }
+    elif isinstance(req.bbox, dict):
+        bbox_dict = {
+            "x": int(req.bbox.get("x", 0)),
+            "y": int(req.bbox.get("y", 0)),
+            "w": int(req.bbox.get("w", req.bbox.get("width", 0))),
+            "h": int(req.bbox.get("h", req.bbox.get("height", 0)))
+        }
+
+    # 2. Extract image crop using OpenCV
+    crop_bytes = b""
+    img_path = None
+    if page:
+        orig_p = page.get("original_image_path", "")
+        if orig_p:
+            clean_p = orig_p.replace("/storage/", "").lstrip("/")
+            for cand in [Path(orig_p), UPLOADS_DIR / clean_p, DATA_DIR / clean_p, UPLOADS_DIR / page.get("document_id", "") / Path(orig_p).name]:
+                if cand.exists() and cand.is_file():
+                    img_path = cand
+                    break
+        if not img_path and page.get("document_id"):
+            doc_upload_dir = UPLOADS_DIR / page["document_id"]
+            img_path = get_original_page_file(doc_upload_dir, page["page_number"], doc_id=page["document_id"])
+    
+    if img_path and img_path.exists():
+        try:
+            raw_data = np.fromfile(str(img_path), dtype=np.uint8)
+            img = cv2.imdecode(raw_data, cv2.IMREAD_COLOR)
+            if img is not None:
+                img_h, img_w = img.shape[:2]
+                bx = max(0, min(bbox_dict["x"], img_w - 1))
+                by = max(0, min(bbox_dict["y"], img_h - 1))
+                bw = max(1, min(bbox_dict["w"], img_w - bx))
+                bh = max(1, min(bbox_dict["h"], img_h - by))
+                # OpenCV crop: img[y:y+h, x:x+w]
+                crop_arr = img[by:by+bh, bx:bx+bw]
+                _, enc = cv2.imencode(".jpg", crop_arr, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
+                crop_bytes = enc.tobytes()
+        except Exception as e:
+            pass
+
+    if not crop_bytes:
+        blank = np.full((40, 100, 3), 245, dtype=np.uint8)
+        _, enc = cv2.imencode(".jpg", blank)
+        crop_bytes = enc.tobytes()
+
+    # 3. Upload crop to R2 / Storage
+    crop_url = storage.upload_crop(book_id=book_id, correction_id=correction_id, file_bytes=crop_bytes)
+    crop_storage_path = f"crops/{book_id or 'general'}/{correction_id}.jpg"
+
+    # 4. Save to corrections table
+    corr_record = db.save_correction(
+        correction_id=correction_id,
+        book_id=book_id,
+        page_id=req.page_id,
+        bbox=bbox_dict,
+        crop_image_path=crop_storage_path,
+        ocr_text=req.ocr_text,
+        corrected_text=req.corrected_text,
+        engine=req.engine or "tesseract"
+    )
+
+    # 5. LearnedWord frequency increment (+1)
+    learned_record = db.increment_learned_word(word=req.corrected_text.strip(), book_id=book_id)
+
+    # 6. Confusion Pair Detection (char-level diff)
+    matcher = difflib.SequenceMatcher(None, req.ocr_text.strip(), req.corrected_text.strip())
+    detected_pairs = []
+    for tag, alo, ahi, blo, bhi in matcher.get_opcodes():
+        if tag == "replace":
+            w = req.ocr_text.strip()[alo:ahi]
+            c = req.corrected_text.strip()[blo:bhi]
+            if w != c:
+                detected_pairs.append((w, c))
+        elif tag == "delete":
+            w = req.ocr_text.strip()[alo:ahi]
+            detected_pairs.append((w, ""))
+        elif tag == "insert":
+            c = req.corrected_text.strip()[blo:bhi]
+            detected_pairs.append(("", c))
+
+    recorded_pairs = []
+    for w_ch, c_ch in detected_pairs:
+        rec = db.record_confusion_pair(wrong_char=w_ch, correct_char=c_ch, book_id=book_id)
+        recorded_pairs.append(rec)
+
+    return {
+        "success": True,
+        "correction_id": correction_id,
+        "crop_url": crop_url,
+        "crop_image_path": crop_storage_path,
+        "learned_word": learned_record,
+        "confusion_pairs": recorded_pairs
+    }
+
+@app.get("/api/corrections")
+def get_corrections_endpoint(
+    book_id: Optional[str] = Query(None),
+    page_id: Optional[str] = Query(None),
+    limit: int = Query(50, ge=1, le=200)
+):
+    """Retrieves verified OCR word corrections."""
+    corrections = db.get_corrections(book_id=book_id, page_id=page_id, limit=limit)
+    return {
+        "success": True,
+        "corrections": corrections,
+        "total": len(corrections)
+    }
+
+@app.get("/api/learned-words")
+def get_learned_words_endpoint(
+    book_id: Optional[str] = Query(None),
+    limit: int = Query(100, ge=1, le=500)
+):
+    """Retrieves learned vocabulary words sorted by frequency."""
+    words = db.get_learned_words(book_id=book_id, limit=limit)
+    return {
+        "success": True,
+        "words": words,
+        "total": len(words)
+    }
+
+@app.get("/api/confusion-pairs")
+def get_confusion_pairs_endpoint(
+    book_id: Optional[str] = Query(None),
+    limit: int = Query(100, ge=1, le=500)
+):
+    """Retrieves character confusion matrix entries sorted by occurrence count."""
+    pairs = db.get_confusion_pairs(book_id=book_id, limit=limit)
+    return {
+        "success": True,
+        "confusion_pairs": pairs,
+        "total": len(pairs)
+    }
+
 
 @app.get("/api/documents/{doc_id}/pages/{page_number}/status")
 def get_page_status_endpoint(doc_id: str, page_number: int):

@@ -13,6 +13,8 @@ __pycache__/
 backend/storage/uploads/*
 backend/storage/processed/*
 backend/storage/exports/*
+backend/storage/originals/*
+backend/storage/r2_local/*
 !backend/storage/sample_images/
 !backend/storage/sample_images/**
 backend/storage/preservation.db
