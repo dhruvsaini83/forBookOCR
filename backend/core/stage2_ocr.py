@@ -17,7 +17,7 @@ def normalize_devanagari_punctuation(text: str) -> str:
     text = text.replace("|", "।")
     return text
 
-def run_primary_ocr(image_path: str, lang: str = "hin+Devanagari+san", psm: int = 6, timeout: int = 30) -> Dict[str, Any]:
+def run_primary_ocr(image_path: str, lang: str = "hin+Devanagari+san", psm: int = 6, timeout: int = 30, book_id: Optional[str] = None) -> Dict[str, Any]:
     """
     Stage 2: Primary OCR Extraction.
     Uses Tesseract with LSTM neural model for Devanagari script and Hindi.
@@ -32,7 +32,13 @@ def run_primary_ocr(image_path: str, lang: str = "hin+Devanagari+san", psm: int 
     img = Image.open(image_path)
     
     # Custom config: Page Segmentation Mode (PSM) and preservation of Indic characters
-    custom_config = f"--oem 1 --psm {psm} -c preserve_interword_spaces=1"
+    user_words_flag = ""
+    if book_id:
+        for cand in [f"user_words/{book_id}.txt", os.path.join(os.path.dirname(__file__), "..", "user_words", f"{book_id}.txt")]:
+            if os.path.exists(cand):
+                user_words_flag = f" --user-words {cand}"
+                break
+    custom_config = f"--oem 1 --psm {psm} -c preserve_interword_spaces=1{user_words_flag}"
     
     try:
         data = pytesseract.image_to_data(

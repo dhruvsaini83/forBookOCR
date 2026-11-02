@@ -64,6 +64,8 @@ from file_manager import (
     replace_page_image_with_archive,
     delete_original_image_file
 )
+import instant_learner
+import ocr_engine
 
 class SelectEngineRequest(BaseModel):
     engine: str  # "tesseract" | "easyocr" | "paddleocr"
@@ -1455,6 +1457,13 @@ def create_correction_endpoint(req: CorrectionRequest):
         rec = db.record_confusion_pair(wrong_char=w_ch, correct_char=c_ch, book_id=book_id)
         recorded_pairs.append(rec)
 
+    # 7. Dynamically compile user words for book if book_id is present
+    if book_id:
+        try:
+            instant_learner.build_user_words_file(book_id=book_id, min_frequency=3)
+        except Exception:
+            pass
+
     return {
         "success": True,
         "correction_id": correction_id,
@@ -1503,6 +1512,53 @@ def get_confusion_pairs_endpoint(
         "confusion_pairs": pairs,
         "total": len(pairs)
     }
+
+@app.get("/api/books/{book_id}/instant-learned-words")
+def get_book_instant_learned_words(book_id: str, min_frequency: int = Query(3, ge=1)):
+    """Retrieves learned vocabulary words for a specific book with frequency >= min_frequency."""
+    words = instant_learner.get_learned_words(book_id=book_id, min_frequency=min_frequency)
+    return {
+        "success": True,
+        "book_id": book_id,
+        "min_frequency": min_frequency,
+        "learned_words": words,
+        "total": len(words)
+    }
+
+@app.get("/api/books/{book_id}/instant-confusion-pairs")
+def get_book_instant_confusion_pairs(book_id: str, min_count: int = Query(3, ge=1)):
+    """Retrieves character confusion matrix entries for a book with count >= min_count."""
+    pairs = instant_learner.get_confusion_pairs(book_id=book_id, min_count=min_count)
+    return {
+        "success": True,
+        "book_id": book_id,
+        "min_count": min_count,
+        "confusion_pairs": pairs,
+        "total": len(pairs)
+    }
+
+@app.post("/api/books/{book_id}/build-user-words")
+def build_book_user_words(book_id: str, min_frequency: int = Query(3, ge=1)):
+    """Compiles learned words into user_words/{book_id}.txt for Tesseract."""
+    path = instant_learner.build_user_words_file(book_id=book_id, min_frequency=min_frequency)
+    cfg = ocr_engine.get_tesseract_config(book_id=book_id)
+    return {
+        "success": True,
+        "book_id": book_id,
+        "user_words_path": path,
+        "tesseract_config": cfg
+    }
+
+@app.get("/api/books/{book_id}/tesseract-config")
+def get_book_tesseract_config(book_id: str):
+    """Returns Tesseract configuration string for a book, including --user-words flag if present."""
+    cfg = ocr_engine.get_tesseract_config(book_id=book_id)
+    return {
+        "success": True,
+        "book_id": book_id,
+        "tesseract_config": cfg
+    }
+
 
 
 @app.get("/api/documents/{doc_id}/pages/{page_number}/status")

@@ -37,3 +37,8 @@ tests/screenshots/
 
 # Cloned Hugging Face subfolder
 vaniscript-hindi-ocr/
+
+
+# Dynamic User Words Dictionary (Tesseract)
+user_words/
+backend/user_words/
