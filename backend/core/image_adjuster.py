@@ -23,7 +23,7 @@ def get_image_info(image_path: str) -> Dict[str, Any]:
             "mode": img.mode
         }
 
-def detect_smart_crop(image_path: str) -> Dict[str, Any]:
+def detect_smart_crop(image_path: str, rotation: int = 0, fine_rotation: float = 0.0) -> Dict[str, Any]:
     """
     Intelligent page and text boundary detection for Devanagari manuscripts.
     - Handles aged parchment, uneven illumination, shadows, and ink bleed.
@@ -34,6 +34,17 @@ def detect_smart_crop(image_path: str) -> Dict[str, Any]:
     try:
         with Image.open(image_path) as pil_img:
             pil_img = normalize_exif_orientation(pil_img)
+            norm_coarse = rotation % 360
+            clamped_fine = max(-15.0, min(15.0, float(fine_rotation)))
+            total_angle = (norm_coarse + clamped_fine) % 360
+            if abs(total_angle) > 0.01:
+                fill = (255, 255, 255) if pil_img.mode == "RGB" else 255
+                pil_img = pil_img.rotate(
+                    -total_angle,
+                    expand=True,
+                    resample=Image.BICUBIC,
+                    fillcolor=fill
+                )
             # Convert to RGB numpy array
             arr = np.array(pil_img.convert("RGB"))
     except Exception as e:

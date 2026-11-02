@@ -803,26 +803,43 @@ def get_original_page_file(doc_upload_dir: Path, page_number: int, doc_id: Optio
     if doc_id:
         page = db.get_page_by_number(doc_id, page_number)
         if page and page.get("original_image_path"):
+            orig_path_str = str(page["original_image_path"])
+            cand_abs = Path(orig_path_str)
+            if cand_abs.is_absolute() and cand_abs.exists():
+                return cand_abs
             clean_rel = page["original_image_path"].replace("/storage/", "").lstrip("/")
             cand = DATA_DIR / clean_rel
+            if cand.exists():
+                return cand
+            b_id = page.get("book_id")
+            if b_id:
+                for b_ext in (".jpg", ".jpeg", ".png", ".webp"):
+                    b_ext_cand = ORIGINALS_DIR / b_id / f"{page_number}{b_ext}"
+                    if b_ext_cand.exists():
+                        return b_ext_cand
             if cand.exists():
                 return cand
     return None
 
 @app.post("/api/documents/{doc_id}/pages/{page_number}/suggest-crop")
-def suggest_page_crop_endpoint(doc_id: str, page_number: int):
+def suggest_page_crop_endpoint(
+    doc_id: str,
+    page_number: int,
+    rotation: int = Query(0),
+    fine_rotation: float = Query(0.0)
+):
     """Provides smart Devanagari page and text boundary detection suggestion."""
     doc = db.get_document_by_id(doc_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found.")
         
     doc_upload_dir = UPLOADS_DIR / doc_id
-    src_file = get_original_page_file(doc_upload_dir, page_number)
+    src_file = get_original_page_file(doc_upload_dir, page_number, doc_id=doc_id)
     if not src_file:
         raise HTTPException(status_code=404, detail=f"Source image for page {page_number} not found.")
         
     try:
-        crop_info = detect_smart_crop(str(src_file))
+        crop_info = detect_smart_crop(str(src_file), rotation=rotation, fine_rotation=fine_rotation)
         return {
             "success": True,
             "document_id": doc_id,
@@ -843,7 +860,7 @@ def adjust_page_image_endpoint(doc_id: str, page_number: int, req: AdjustmentReq
         raise HTTPException(status_code=404, detail="Document not found.")
         
     doc_upload_dir = UPLOADS_DIR / doc_id
-    src_file = get_original_page_file(doc_upload_dir, page_number)
+    src_file = get_original_page_file(doc_upload_dir, page_number, doc_id=doc_id)
     if not src_file:
         raise HTTPException(status_code=404, detail=f"Source image for page {page_number} not found.")
         
@@ -900,7 +917,7 @@ def adjust_page_image_endpoint(doc_id: str, page_number: int, req: AdjustmentReq
         for p in range(1, doc["total_pages"] + 1):
             if p == page_number:
                 continue
-            p_src = get_original_page_file(doc_upload_dir, p)
+            p_src = get_original_page_file(doc_upload_dir, p, doc_id=doc_id)
             if p_src:
                 p_out = doc_upload_dir / f"page_{p}_adjusted.png"
                 apply_image_adjustment(
@@ -936,7 +953,7 @@ def reset_page_adjustment_endpoint(doc_id: str, page_number: int, run_ocr: bool 
         raise HTTPException(status_code=404, detail="Document not found.")
         
     doc_upload_dir = UPLOADS_DIR / doc_id
-    src_file = get_original_page_file(doc_upload_dir, page_number)
+    src_file = get_original_page_file(doc_upload_dir, page_number, doc_id=doc_id)
     if not src_file:
         raise HTTPException(status_code=404, detail=f"Source image for page {page_number} not found.")
 
@@ -946,6 +963,26 @@ def reset_page_adjustment_endpoint(doc_id: str, page_number: int, run_ocr: bool 
             adj_file.unlink()
         except Exception:
             pass
+
+    # Re-sync optimized derivative with original source image
+    opt_file = doc_upload_dir / f"page_{page_number}_optimized.webp"
+    try:
+        page_info = db.get_page_by_number(doc_id, page_number) or {}
+        prior_mode = (page_info.get("compression_metadata") or {}).get("mode", "smart")
+        comp_res = compress_image(str(src_file), str(opt_file), mode=prior_mode)
+        db.update_page_compression(
+            doc_id=doc_id,
+            page_number=page_number,
+            optimized_img=to_safe_rel_url(str(opt_file)),
+            compression_metadata=comp_res,
+            original_sha256=get_file_sha256(str(src_file))
+        )
+    except Exception:
+        if opt_file.exists():
+            try:
+                opt_file.unlink()
+            except Exception:
+                pass
 
     db.reset_page_adjustment(doc_id, page_number)
 
@@ -972,7 +1009,7 @@ def compress_page_image_endpoint(doc_id: str, page_number: int, req: Compression
         raise HTTPException(status_code=404, detail="Document not found.")
         
     doc_upload_dir = UPLOADS_DIR / doc_id
-    src_file = get_original_page_file(doc_upload_dir, page_number)
+    src_file = get_original_page_file(doc_upload_dir, page_number, doc_id=doc_id)
     if not src_file:
         raise HTTPException(status_code=404, detail=f"Source image for page {page_number} not found.")
         
@@ -1005,7 +1042,7 @@ def compress_page_image_endpoint(doc_id: str, page_number: int, req: Compression
         for p in range(1, doc["total_pages"] + 1):
             if p == page_number:
                 continue
-            p_src = get_original_page_file(doc_upload_dir, p)
+            p_src = get_original_page_file(doc_upload_dir, p, doc_id=doc_id)
             if p_src:
                 p_adj = doc_upload_dir / f"page_{p}_adjusted.png"
                 p_work = p_adj if p_adj.exists() else p_src

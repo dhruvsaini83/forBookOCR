@@ -175,3 +175,99 @@ def test_adjustment_validation_rejections():
     }
     res2 = client.post(f"/api/documents/{doc_id}/pages/1/adjust", json=bad_fine)
     assert res2.status_code == 400
+
+
+def test_rotated_smart_crop_suggestion():
+    """Verifies that suggest-crop with rotation=90 returns crop coordinates aligned to rotated image."""
+    sample_res = client.post("/api/samples/load/sample-1")
+    assert sample_res.status_code == 200
+    doc_id = sample_res.json()["document_id"]
+    
+    # Unrotated suggestion
+    unrot_res = client.post(f"/api/documents/{doc_id}/pages/1/suggest-crop?rotation=0")
+    assert unrot_res.status_code == 200
+    unrot_data = unrot_res.json()
+    orig_w = unrot_data["image_width"]
+    orig_h = unrot_data["image_height"]
+    
+    # Rotated 90 degrees CW
+    rot_res = client.post(f"/api/documents/{doc_id}/pages/1/suggest-crop?rotation=90")
+    assert rot_res.status_code == 200
+    rot_data = rot_res.json()
+    assert rot_data["image_width"] == orig_h
+    assert rot_data["image_height"] == orig_w
+    crop90 = rot_data["crop"]
+    assert crop90["x"] + crop90["width"] <= orig_h
+    assert crop90["y"] + crop90["height"] <= orig_w
+
+def test_fine_rotated_smart_crop_suggestion():
+    """Verifies that suggest-crop with fine rotation deskew returns valid bounded box."""
+    sample_res = client.post("/api/samples/load/sample-1")
+    assert sample_res.status_code == 200
+    doc_id = sample_res.json()["document_id"]
+    
+    rot_res = client.post(f"/api/documents/{doc_id}/pages/1/suggest-crop?rotation=0&fine_rotation=3.5")
+    assert rot_res.status_code == 200
+    rot_data = rot_res.json()
+    crop = rot_data["crop"]
+    assert crop["x"] >= 0
+    assert crop["y"] >= 0
+    assert crop["x"] + crop["width"] <= rot_data["image_width"]
+    assert crop["y"] + crop["height"] <= rot_data["image_height"]
+
+def test_book_page_source_lookup_in_adjustment():
+    """Verifies get_original_page_file resolves source image for book pages stored in originals/."""
+    import uuid
+    from core.config import ORIGINALS_DIR
+    book_id = f"test_book_crop_{uuid.uuid4().hex[:8]}"
+    book_dir = ORIGINALS_DIR / book_id
+    book_dir.mkdir(parents=True, exist_ok=True)
+    page_img = book_dir / "1.png"
+    Image.new("RGB", (600, 800), color="white").save(str(page_img))
+    
+    # Insert dummy book document and page into db
+    db.save_document(
+        doc_id=book_id,
+        title="Test Book Adjustment",
+        original_filename="book.pdf",
+        file_type="pdf",
+        total_pages=1
+    )
+    db.save_page_result(
+        page_id=f"{book_id}_p1",
+        doc_id=book_id,
+        page_number=1,
+        original_img=f"/storage/originals/{book_id}/1.png",
+        preprocessed_img=f"/storage/originals/{book_id}/1.png",
+        quality_metrics={},
+        raw_text="",
+        verified_text="",
+        word_tokens=[],
+        stage_metrics={},
+        status="completed",
+        book_id=book_id
+    )
+    
+    # Ensure uploads dir exists for adjustments
+    (UPLOADS_DIR / book_id).mkdir(parents=True, exist_ok=True)
+    
+    # 1. suggest-crop on book page must not 404
+    suggest_res = client.post(f"/api/documents/{book_id}/pages/1/suggest-crop")
+    assert suggest_res.status_code == 200
+    assert suggest_res.json()["image_width"] == 600
+    
+    # 2. adjust on book page must succeed
+    adj_res = client.post(f"/api/documents/{book_id}/pages/1/adjust", json={
+        "crop": {"x": 10, "y": 10, "width": 500, "height": 700},
+        "rotation": 0,
+        "fine_rotation": 0.0,
+        "run_ocr": False
+    })
+    assert adj_res.status_code == 200
+    assert adj_res.json()["success"] is True
+    
+    # 3. reset adjustment must succeed
+    reset_res = client.post(f"/api/documents/{book_id}/pages/1/reset-adjustment?run_ocr=false")
+    assert reset_res.status_code == 200
+    assert reset_res.json()["success"] is True
+    db.delete_document(book_id)

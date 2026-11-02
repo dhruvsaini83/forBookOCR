@@ -70,9 +70,11 @@ export const App: React.FC = () => {
   const [isExportOpen, setIsExportOpen] = useState<boolean>(false);
   const [isAdjustmentOpen, setIsAdjustmentOpen] = useState<boolean>(false);
   const [isComparisonOpen, setIsComparisonOpen] = useState<boolean>(false);
+  const [imageVersion, setImageVersion] = useState<number>(Date.now());
 
   const handleApplyAdjustmentSuccess = async (pageNum: number) => {
     if (!currentDoc) return;
+    setImageVersion(Date.now());
     await loadDocument(currentDoc.id, pageNum);
   };
 
@@ -81,6 +83,7 @@ export const App: React.FC = () => {
     try {
       setIsLoading(true);
       await api.resetAdjustment(currentDoc.id, currentPageNum, true);
+      setImageVersion(Date.now());
       await loadDocument(currentDoc.id, currentPageNum);
     } catch (err) {
       console.error('Failed to reset adjustment', err);
@@ -549,6 +552,7 @@ export const App: React.FC = () => {
                   onResetAdjustment={handleResetAdjustment}
                   onOpenComparison={() => setIsComparisonOpen(true)}
                   lang={lang}
+                  imageVersion={imageVersion}
                 />
               </div>
             )}

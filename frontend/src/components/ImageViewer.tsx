@@ -17,6 +17,7 @@ interface ImageViewerProps {
   onResetAdjustment?: () => Promise<void>;
   onOpenComparison?: () => void;
   lang: Language;
+  imageVersion?: number;
 }
 
 export const ImageViewer: React.FC<ImageViewerProps> = ({
@@ -32,6 +33,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
   onResetAdjustment,
   onOpenComparison,
   lang,
+  imageVersion,
 }) => {
   const t = translations[lang];
   const [activeVariant, setActiveVariant] = useState<'original' | 'adjusted' | 'enhanced'>('enhanced');
@@ -44,10 +46,21 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
 
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // Auto-switch to adjusted variant when adjustedUrl is available, or fallback when reset
+  React.useEffect(() => {
+    if (adjustedUrl) {
+      setActiveVariant('adjusted');
+    } else if (activeVariant === 'adjusted') {
+      setActiveVariant('enhanced');
+    }
+  }, [adjustedUrl]);
+
   const formatImgUrl = (url: string) => {
     if (!url) return '';
-    if (url.startsWith('http://') || url.startsWith('https://')) return url;
-    const cleanPath = url.startsWith('/') ? url : `/${url}`;
+    const separator = url.includes('?') ? '&' : '?';
+    const versioned = imageVersion ? `${url}${separator}v=${imageVersion}` : url;
+    if (versioned.startsWith('http://') || versioned.startsWith('https://')) return versioned;
+    const cleanPath = versioned.startsWith('/') ? versioned : `/${versioned}`;
     const backendBase = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
     return `${backendBase}${cleanPath}`;
   };

@@ -29,6 +29,37 @@ interface HistoryState {
   fineRotation: number;
 }
 
+// Compute rotated canvas dimensions matching Python PIL's rotate(expand=True)
+const computeRotatedDimensions = (w: number, h: number, coarse: number, fine: number) => {
+  const totalAngle = (coarse + fine) % 360;
+  const rad = (totalAngle * Math.PI) / 180;
+  const cx = w / 2;
+  const cy = h / 2;
+  const cosA = Math.cos(rad);
+  const sinA = Math.sin(rad);
+
+  const corners = [
+    [-cx, -cy],
+    [w - cx, -cy],
+    [w - cx, h - cy],
+    [-cx, h - cy]
+  ];
+
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const [x, y] of corners) {
+    const rx = x * cosA - y * sinA;
+    const ry = x * sinA + y * cosA;
+    if (rx < minX) minX = rx;
+    if (rx > maxX) maxX = rx;
+    if (ry < minY) minY = ry;
+    if (ry > maxY) maxY = ry;
+  }
+
+  const rotW = Math.max(1, Math.round(maxX - minX));
+  const rotH = Math.max(1, Math.round(maxY - minY));
+  return { rotW, rotH, totalAngle, rad };
+};
+
 export const ImageAdjustmentModal: React.FC<ImageAdjustmentModalProps> = ({
   isOpen,
   onClose,
@@ -46,7 +77,7 @@ export const ImageAdjustmentModal: React.FC<ImageAdjustmentModalProps> = ({
   // Active page within the adjustment studio
   const [activePage, setActivePage] = useState<number>(pageNumber);
   
-  // Natural image dimensions
+  // Natural source image dimensions
   const [imgNaturalSize, setImgNaturalSize] = useState<{ width: number; height: number }>({ width: 1, height: 1 });
   const [isImgLoaded, setIsImgLoaded] = useState<boolean>(false);
 
@@ -76,12 +107,25 @@ export const ImageAdjustmentModal: React.FC<ImageAdjustmentModalProps> = ({
   const [isCompressing, setIsCompressing] = useState<boolean>(false);
 
   // Dragging & Resizing State
-  // handle: 'move' | 'nw' | 'ne' | 'se' | 'sw' | 'n' | 's' | 'e' | 'w' | null
   const [activeHandle, setActiveHandle] = useState<string | null>(null);
-  const dragStartRef = useRef<{ clientX: number; clientY: number; crop: CropBox }>({ clientX: 0, clientY: 0, crop: { x: 0, y: 0, width: 0, height: 0 } });
+  const dragStartRef = useRef<{ clientX: number; clientY: number; crop: CropBox }>({ 
+    clientX: 0, 
+    clientY: 0, 
+    crop: { x: 0, y: 0, width: 0, height: 0 } 
+  });
 
   const containerRef = useRef<HTMLDivElement>(null);
-  const imgRef = useRef<HTMLImageElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const imageElementRef = useRef<HTMLImageElement | null>(null);
+
+  // Format image URL
+  const formatImgUrl = useCallback((url: string) => {
+    if (!url) return '';
+    if (url.startsWith('http://') || url.startsWith('https://')) return url;
+    const cleanPath = url.startsWith('/') ? url : `/${url}`;
+    const backendBase = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+    return `${backendBase}${cleanPath}`;
+  }, []);
 
   // Helper to push history state before changes
   const pushHistory = useCallback(() => {
@@ -105,6 +149,70 @@ export const ImageAdjustmentModal: React.FC<ImageAdjustmentModalProps> = ({
     setErrorMessage(null);
     setIsImgLoaded(false);
   }, [isOpen, pageNumber, currentAdjustment]);
+
+  // Load source image
+  useEffect(() => {
+    if (!isOpen || !originalImageUrl) return;
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.src = formatImgUrl(originalImageUrl);
+    img.onload = () => {
+      const nw = img.naturalWidth || 1;
+      const nh = img.naturalHeight || 1;
+      setImgNaturalSize({ width: nw, height: nh });
+      imageElementRef.current = img;
+      setIsImgLoaded(true);
+      if (!currentAdjustment?.crop) {
+        setCrop({ x: 0, y: 0, width: nw, height: nh });
+      }
+    };
+    img.onerror = () => {
+      setErrorMessage('चित्र लोड करने में विफल रहा।');
+    };
+  }, [isOpen, originalImageUrl, activePage, formatImgUrl, currentAdjustment]);
+
+  // Rotated dimensions
+  const currentRotated = computeRotatedDimensions(
+    imgNaturalSize.width,
+    imgNaturalSize.height,
+    rotation,
+    fineRotation
+  );
+  const currentViewWidth = currentRotated.rotW;
+  const currentViewHeight = currentRotated.rotH;
+
+  // Draw rotated canvas whenever image or rotation changes
+  useEffect(() => {
+    const img = imageElementRef.current;
+    const canvas = canvasRef.current;
+    if (!isImgLoaded || !img || !canvas) return;
+
+    const { rotW, rotH, rad } = currentRotated;
+    canvas.width = rotW;
+    canvas.height = rotH;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // Clean white background for manuscripts
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, rotW, rotH);
+
+    ctx.save();
+    // Translate to center of canvas
+    ctx.translate(rotW / 2, rotH / 2);
+    // Rotate clockwise
+    ctx.rotate(rad);
+    // Draw source image centered
+    ctx.drawImage(
+      img,
+      -imgNaturalSize.width / 2,
+      -imgNaturalSize.height / 2,
+      imgNaturalSize.width,
+      imgNaturalSize.height
+    );
+    ctx.restore();
+  }, [isImgLoaded, imgNaturalSize, rotation, fineRotation, currentRotated]);
 
   const fetchCompressionInfo = useCallback(async () => {
     try {
@@ -166,53 +274,71 @@ export const ImageAdjustmentModal: React.FC<ImageAdjustmentModalProps> = ({
 
   if (!isOpen) return null;
 
-  const formatImgUrl = (url: string) => {
-    if (!url) return '';
-    if (url.startsWith('http://') || url.startsWith('https://')) return url;
-    const cleanPath = url.startsWith('/') ? url : `/${url}`;
-    const backendBase = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
-    return `${backendBase}${cleanPath}`;
-  };
-
-  const handleImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
-    const img = e.currentTarget;
-    const nw = img.naturalWidth || 1;
-    const nh = img.naturalHeight || 1;
-    setImgNaturalSize({ width: nw, height: nh });
-    setIsImgLoaded(true);
-
-    // If no crop currently set, initialize default crop covering full image
-    if (!crop) {
-      setCrop({ x: 0, y: 0, width: nw, height: nh });
-    }
-  };
-
-  // Dimensions under current rotation
-  const isRotated90or270 = (rotation % 180) !== 0;
-  const currentViewWidth = isRotated90or270 ? imgNaturalSize.height : imgNaturalSize.width;
-  const currentViewHeight = isRotated90or270 ? imgNaturalSize.width : imgNaturalSize.height;
-
   // --- Rotations ---
   const handleRotateCw = () => {
     pushHistory();
+    const prevW = currentViewWidth;
+    const prevH = currentViewHeight;
     setRotation((prev) => (prev + 90) % 360);
-    // Reset crop to full new bounds on 90 deg rotation to avoid out-of-bound distortion
-    setCrop({ x: 0, y: 0, width: currentViewHeight, height: currentViewWidth });
+    if (crop) {
+      // Rotate existing crop box 90° CW
+      setCrop({
+        x: Math.max(0, Math.round(prevH - (crop.y + crop.height))),
+        y: Math.max(0, Math.round(crop.x)),
+        width: Math.min(prevH, Math.round(crop.height)),
+        height: Math.min(prevW, Math.round(crop.width)),
+      });
+    } else {
+      setCrop({ x: 0, y: 0, width: prevH, height: prevW });
+    }
   };
 
   const handleRotateCcw = () => {
     pushHistory();
+    const prevW = currentViewWidth;
+    const prevH = currentViewHeight;
     setRotation((prev) => (prev + 270) % 360);
-    setCrop({ x: 0, y: 0, width: currentViewHeight, height: currentViewWidth });
+    if (crop) {
+      // Rotate existing crop box 90° CCW
+      setCrop({
+        x: Math.max(0, Math.round(crop.y)),
+        y: Math.max(0, Math.round(prevW - (crop.x + crop.width))),
+        width: Math.min(prevH, Math.round(crop.height)),
+        height: Math.min(prevW, Math.round(crop.width)),
+      });
+    } else {
+      setCrop({ x: 0, y: 0, width: prevH, height: prevW });
+    }
   };
 
   const handleRotate180 = () => {
     pushHistory();
+    const prevW = currentViewWidth;
+    const prevH = currentViewHeight;
     setRotation((prev) => (prev + 180) % 360);
+    if (crop) {
+      setCrop({
+        x: Math.max(0, Math.round(prevW - (crop.x + crop.width))),
+        y: Math.max(0, Math.round(prevH - (crop.y + crop.height))),
+        width: Math.min(prevW, Math.round(crop.width)),
+        height: Math.min(prevH, Math.round(crop.height)),
+      });
+    }
   };
 
   const handleFineRotateChange = (newAngle: number) => {
     setFineRotation(newAngle);
+    if (crop) {
+      const nextRot = computeRotatedDimensions(imgNaturalSize.width, imgNaturalSize.height, rotation, newAngle);
+      setCrop((prev) => {
+        if (!prev) return null;
+        const clampedW = Math.min(prev.width, nextRot.rotW);
+        const clampedH = Math.min(prev.height, nextRot.rotH);
+        const clampedX = Math.max(0, Math.min(nextRot.rotW - clampedW, prev.x));
+        const clampedY = Math.max(0, Math.min(nextRot.rotH - clampedH, prev.y));
+        return { x: clampedX, y: clampedY, width: clampedW, height: clampedH };
+      });
+    }
   };
 
   // --- Smart Auto Crop ---
@@ -220,7 +346,7 @@ export const ImageAdjustmentModal: React.FC<ImageAdjustmentModalProps> = ({
     try {
       setIsAutoDetecting(true);
       setErrorMessage(null);
-      const res = await api.suggestCrop(documentId, activePage);
+      const res = await api.suggestCrop(documentId, activePage, rotation, fineRotation);
       if (res.crop) {
         pushHistory();
         setCrop(res.crop);
@@ -286,7 +412,7 @@ export const ImageAdjustmentModal: React.FC<ImageAdjustmentModalProps> = ({
 
   // --- Pointer Drag / Resize for Crop Box ---
   const handlePointerDown = (handle: string, e: React.PointerEvent) => {
-    if (!crop || !imgRef.current) return;
+    if (!crop || !canvasRef.current) return;
     e.preventDefault();
     e.stopPropagation();
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
@@ -301,14 +427,14 @@ export const ImageAdjustmentModal: React.FC<ImageAdjustmentModalProps> = ({
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
-    if (!activeHandle || !crop || !imgRef.current) return;
+    if (!activeHandle || !crop || !canvasRef.current) return;
     e.preventDefault();
 
-    const img = imgRef.current;
-    const rect = img.getBoundingClientRect();
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return;
 
-    // Scale factors from screen pixels to image coordinate units
+    // Scale factors from screen pixels to internal canvas coordinate units
     const scaleX = currentViewWidth / rect.width;
     const scaleY = currentViewHeight / rect.height;
 
@@ -328,7 +454,7 @@ export const ImageAdjustmentModal: React.FC<ImageAdjustmentModalProps> = ({
       nextX = Math.max(0, Math.min(currentViewWidth - initial.width, initial.x + deltaX));
       nextY = Math.max(0, Math.min(currentViewHeight - initial.height, initial.y + deltaY));
     } else {
-      // Corner & Edge adjustments
+      // Screen-aligned adjustments: right is east, down is south, left is west, up is north
       if (activeHandle.includes('e')) {
         nextW = Math.max(minW, Math.min(currentViewWidth - initial.x, initial.width + deltaX));
       }
@@ -406,7 +532,7 @@ export const ImageAdjustmentModal: React.FC<ImageAdjustmentModalProps> = ({
     }
   };
 
-  // Calculate crop rectangle as percentage of displayed image
+  // Calculate crop rectangle as percentage of upright canvas
   const cropLeftPct = crop ? (crop.x / currentViewWidth) * 100 : 0;
   const cropTopPct = crop ? (crop.y / currentViewHeight) * 100 : 0;
   const cropWidthPct = crop ? (crop.width / currentViewWidth) * 100 : 100;
@@ -570,7 +696,7 @@ export const ImageAdjustmentModal: React.FC<ImageAdjustmentModalProps> = ({
               {fineRotation !== 0 && (
                 <button
                   type="button"
-                  onClick={() => setFineRotation(0)}
+                  onClick={() => handleFineRotateChange(0)}
                   className="text-[10px] text-stone-400 hover:text-stone-700 font-mono"
                   title="0° Reset"
                 >
@@ -606,7 +732,7 @@ export const ImageAdjustmentModal: React.FC<ImageAdjustmentModalProps> = ({
 
             <button
               type="button"
-              onClick={() => setZoom((z) => Math.max(0.6, z - 0.2))}
+              onClick={() => setZoom((z) => Math.max(0.6, Number((z - 0.2).toFixed(1))))}
               disabled={zoom <= 0.6}
               className="p-1.5 rounded-xl bg-white border border-stone-200 text-stone-700 hover:bg-stone-100 disabled:opacity-30 transition-colors"
               title={t.zoomOut}
@@ -621,7 +747,7 @@ export const ImageAdjustmentModal: React.FC<ImageAdjustmentModalProps> = ({
 
             <button
               type="button"
-              onClick={() => setZoom((z) => Math.min(2.5, z + 0.2))}
+              onClick={() => setZoom((z) => Math.min(2.5, Number((z + 0.2).toFixed(1))))}
               disabled={zoom >= 2.5}
               className="p-1.5 rounded-xl bg-white border border-stone-200 text-stone-700 hover:bg-stone-100 disabled:opacity-30 transition-colors"
               title={t.zoomIn}
@@ -750,34 +876,21 @@ export const ImageAdjustmentModal: React.FC<ImageAdjustmentModalProps> = ({
           onPointerUp={handlePointerUp}
         >
           <div 
-            className="relative transition-transform duration-100"
+            className="relative shadow-2xl rounded-sm inline-block"
             style={{
               transform: `scale(${zoom})`,
               transformOrigin: 'center center',
             }}
           >
-            {/* The Image with rotation applied */}
-            <img
-              ref={imgRef}
-              src={formatImgUrl(originalImageUrl)}
-              alt="Scan for adjustment"
-              onLoad={handleImageLoad}
-              draggable={false}
-              className="max-h-[64vh] max-w-full object-contain shadow-2xl rounded-sm transition-transform duration-150"
-              style={{
-                transform: `rotate(${rotation + fineRotation}deg)`,
-              }}
+            {/* Upright Rotated Canvas (1:1 with PIL backend transformation) */}
+            <canvas
+              ref={canvasRef}
+              className="max-h-[64vh] max-w-full block object-contain shadow-2xl rounded-sm"
             />
 
             {/* Crop Overlay when crop is enabled and image is loaded */}
             {isCropEnabled && crop && isImgLoaded && (
-              <div 
-                className="absolute inset-0 pointer-events-none"
-                style={{
-                  transform: `rotate(${rotation + fineRotation}deg)`,
-                  transformOrigin: 'center center',
-                }}
-              >
+              <div className="absolute inset-0 pointer-events-none">
                 {/* 4 Outer Darkened Backdrop Panels */}
                 <div 
                   className="absolute bg-stone-950/65"
@@ -785,7 +898,7 @@ export const ImageAdjustmentModal: React.FC<ImageAdjustmentModalProps> = ({
                 />
                 <div 
                   className="absolute bg-stone-950/65"
-                  style={{ bottom: 0, left: 0, right: 0, height: `${100 - (cropTopPct + cropHeightPct)}%` }}
+                  style={{ bottom: 0, left: 0, right: 0, height: `${Math.max(0, 100 - (cropTopPct + cropHeightPct))}%` }}
                 />
                 <div 
                   className="absolute bg-stone-950/65"
@@ -793,7 +906,7 @@ export const ImageAdjustmentModal: React.FC<ImageAdjustmentModalProps> = ({
                 />
                 <div 
                   className="absolute bg-stone-950/65"
-                  style={{ top: `${cropTopPct}%`, right: 0, width: `${100 - (cropLeftPct + cropWidthPct)}%`, height: `${cropHeightPct}%` }}
+                  style={{ top: `${cropTopPct}%`, right: 0, width: `${Math.max(0, 100 - (cropLeftPct + cropWidthPct))}%`, height: `${cropHeightPct}%` }}
                 />
 
                 {/* The Active Crop Box */}
@@ -815,8 +928,8 @@ export const ImageAdjustmentModal: React.FC<ImageAdjustmentModalProps> = ({
                     <div className="border-r border-b border-white/20" />
                     <div className="border-r border-b border-white/20" />
                     <div className="border-b border-white/20" />
-                    <div className="border-r border-white/20" />
-                    <div className="border-r border-white/20" />
+                    <div className="border-r border-b border-white/20" />
+                    <div className="border-r border-b border-white/20" />
                     <div />
                   </div>
 

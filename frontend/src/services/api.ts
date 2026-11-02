@@ -159,8 +159,12 @@ export const api = {
     return handleResponse(res, 'Failed to fetch unresolved details');
   },
 
-  async suggestCrop(docId: string, pageNumber: number): Promise<CropSuggestionResponse> {
-    const res = await fetch(`${API_BASE}/documents/${docId}/pages/${pageNumber}/suggest-crop`, {
+  async suggestCrop(docId: string, pageNumber: number, rotation: number = 0, fineRotation: number = 0): Promise<CropSuggestionResponse> {
+    const params = new URLSearchParams();
+    if (rotation) params.append('rotation', rotation.toString());
+    if (fineRotation) params.append('fine_rotation', fineRotation.toString());
+    const query = params.toString() ? `?${params.toString()}` : '';
+    const res = await fetch(`${API_BASE}/documents/${docId}/pages/${pageNumber}/suggest-crop${query}`, {
       method: 'POST',
     });
     return handleResponse(res, 'Failed to fetch smart crop suggestion');
