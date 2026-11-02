@@ -105,6 +105,7 @@ export const ImageAdjustmentModal: React.FC<ImageAdjustmentModalProps> = ({
   const [compressionMode, setCompressionMode] = useState<CompressionMode>('smart');
   const [compressionInfo, setCompressionInfo] = useState<CompressionInfoResponse | null>(null);
   const [isCompressing, setIsCompressing] = useState<boolean>(false);
+  const [mobileStudioTab, setMobileStudioTab] = useState<'tools' | 'compression'>('tools');
 
   // Dragging & Resizing State
   const [activeHandle, setActiveHandle] = useState<string | null>(null);
@@ -605,8 +606,38 @@ export const ImageAdjustmentModal: React.FC<ImageAdjustmentModalProps> = ({
           </div>
         </div>
 
+        {/* Mobile Tab Switcher (< sm screens) */}
+        <div className="sm:hidden px-4 py-2 bg-stone-100 border-b border-stone-200 flex items-center justify-center shrink-0">
+          <div className="inline-flex bg-stone-200 p-0.5 rounded-xl border border-stone-300 text-xs font-devanagari">
+            <button
+              type="button"
+              onClick={() => setMobileStudioTab('tools')}
+              className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
+                mobileStudioTab === 'tools'
+                  ? 'bg-white text-stone-900 font-bold shadow-2xs'
+                  : 'text-stone-600 font-medium'
+              }`}
+            >
+              क्रॉप व रोटेट
+            </button>
+            <button
+              type="button"
+              onClick={() => setMobileStudioTab('compression')}
+              className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
+                mobileStudioTab === 'compression'
+                  ? 'bg-white text-stone-900 font-bold shadow-2xs'
+                  : 'text-stone-600 font-medium'
+              }`}
+            >
+              संपीड़न व गुणवत्ता
+            </button>
+          </div>
+        </div>
+
         {/* Primary Interactive Toolbar */}
-        <div className="px-3 sm:px-6 py-2.5 bg-stone-50 border-b border-stone-200/90 flex flex-wrap items-center justify-between gap-2 shrink-0 text-xs font-devanagari">
+        <div className={`px-3 sm:px-6 py-2.5 bg-stone-50 border-b border-stone-200/90 flex flex-wrap items-center justify-between gap-2 shrink-0 text-xs font-devanagari ${
+          mobileStudioTab === 'compression' ? 'hidden sm:flex' : 'flex'
+        }`}>
           {/* Main Action Group: Auto Crop, Crop Toggle, Rotations */}
           <div className="flex items-center gap-1 sm:gap-1.5 flex-wrap">
             {/* Smart Auto Crop */}
@@ -793,7 +824,9 @@ export const ImageAdjustmentModal: React.FC<ImageAdjustmentModalProps> = ({
         )}
 
         {/* Smart Compression & Archival Preservation Strip */}
-        <div className="bg-stone-100/90 border-b border-stone-200 px-3 sm:px-6 py-2 flex flex-wrap items-center justify-between gap-2 text-xs font-devanagari">
+        <div className={`bg-stone-100/90 border-b border-stone-200 px-3 sm:px-6 py-2 flex flex-wrap items-center justify-between gap-2 text-xs font-devanagari ${
+          mobileStudioTab === 'tools' ? 'hidden sm:flex' : 'flex'
+        }`}>
           <div className="flex items-center gap-1.5 flex-wrap">
             <span className="font-semibold text-stone-700 flex items-center gap-1 text-[11px] mr-1">
               <Zap className="w-3.5 h-3.5 text-amber-600" />

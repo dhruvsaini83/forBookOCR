@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   AlertTriangle, BookOpen, ChevronLeft, ChevronRight, 
   Sparkles, Search, Check, RefreshCw, ZoomIn, ZoomOut, 
-  ArrowLeft, BrainCircuit, Lightbulb, Zap, X
+  ArrowLeft, BrainCircuit, Lightbulb, Zap, X,
+  Image as ImageIcon, FileText, LayoutGrid
 } from 'lucide-react';
 import { api, getStorageUrl } from '../services/api';
 import type { BookData, PageData, WordToken, SuggestionItem } from '../types';
@@ -45,6 +46,7 @@ export const Verify: React.FC<VerifyProps> = ({
   const [selectedWordIdx, setSelectedWordIdx] = useState<number | null>(null);
   const [filterMode, setFilterMode] = useState<'all' | 'flagged' | 'verified'>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [mobileViewMode, setMobileViewMode] = useState<'split' | 'image' | 'words'>('split');
 
   // Suggestion Engine State
   const [suggestionsMap, setSuggestionsMap] = useState<Record<number, SuggestionItem>>({});
@@ -467,8 +469,9 @@ export const Verify: React.FC<VerifyProps> = ({
                 type="button"
                 onClick={() => handlePageChange(currentPageIndex - 1)}
                 disabled={currentPageIndex === 0}
-                className="p-1 rounded-lg hover:bg-white text-stone-700 disabled:opacity-40 cursor-pointer"
+                className="p-1.5 sm:p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg hover:bg-white text-stone-700 disabled:opacity-40 cursor-pointer transition-colors"
                 title="पिछला पृष्ठ"
+                aria-label="पिछला पृष्ठ"
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
@@ -481,8 +484,9 @@ export const Verify: React.FC<VerifyProps> = ({
                 type="button"
                 onClick={() => handlePageChange(currentPageIndex + 1)}
                 disabled={currentPageIndex === pages.length - 1}
-                className="p-1 rounded-lg hover:bg-white text-stone-700 disabled:opacity-40 cursor-pointer"
+                className="p-1.5 sm:p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg hover:bg-white text-stone-700 disabled:opacity-40 cursor-pointer transition-colors"
                 title="अगला पृष्ठ"
+                aria-label="अगला पृष्ठ"
               >
                 <ChevronRight className="w-4 h-4" />
               </button>
@@ -523,10 +527,64 @@ export const Verify: React.FC<VerifyProps> = ({
         </div>
       </div>
 
+      {/* Mobile/Tablet Workspace View Mode Switcher (Visible on < lg screens) */}
+      <div className="lg:hidden max-w-7xl w-full mx-auto px-3 sm:px-4 mb-2 flex items-center justify-between gap-2">
+        <div
+          role="tablist"
+          aria-label="सत्यापन दृश्य मोड"
+          className="inline-flex bg-stone-200/80 p-1 rounded-xl border border-stone-300 shadow-2xs text-xs font-devanagari"
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mobileViewMode === 'image'}
+            onClick={() => setMobileViewMode('image')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+              mobileViewMode === 'image'
+                ? 'bg-white text-vedic-950 font-bold shadow-2xs'
+                : 'text-stone-700 hover:text-stone-900 font-medium'
+            }`}
+          >
+            <ImageIcon className="w-3.5 h-3.5 text-vedic-700" />
+            <span>पाण्डुलिपि</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mobileViewMode === 'words'}
+            onClick={() => setMobileViewMode('words')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+              mobileViewMode === 'words'
+                ? 'bg-white text-vedic-950 font-bold shadow-2xs'
+                : 'text-stone-700 hover:text-stone-900 font-medium'
+            }`}
+          >
+            <FileText className="w-3.5 h-3.5 text-emerald-700" />
+            <span>शब्द सम्पादन</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mobileViewMode === 'split'}
+            onClick={() => setMobileViewMode('split')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+              mobileViewMode === 'split'
+                ? 'bg-white text-vedic-950 font-bold shadow-2xs'
+                : 'text-stone-700 hover:text-stone-900 font-medium'
+            }`}
+          >
+            <LayoutGrid className="w-3.5 h-3.5 text-indigo-700" />
+            <span>संयुक्त (Split)</span>
+          </button>
+        </div>
+      </div>
+
       {/* Main Dual Workspace */}
       <div className="flex-1 max-w-7xl w-full mx-auto p-3 sm:p-4 grid grid-cols-1 lg:grid-cols-12 gap-4">
         {/* Left Column (5 Cols): Scanned Original Page Image with Interactive Word Highlighting */}
-        <div className="lg:col-span-5 bg-white rounded-2xl border border-stone-200 shadow-sm flex flex-col overflow-hidden max-h-[82vh]">
+        <div className={`lg:col-span-5 bg-white rounded-2xl border border-stone-200 shadow-sm flex flex-col overflow-hidden max-h-[82vh] ${
+          mobileViewMode === 'words' ? 'hidden lg:flex' : 'flex'
+        }`}>
           <div className="px-4 py-2.5 border-b border-stone-200 bg-stone-50 flex items-center justify-between">
             <span className="text-xs font-bold text-stone-700 flex items-center gap-1.5">
               <span>मूल पांडुलिपि पृष्ठ {currentPage?.page_number || currentPageIndex + 1}</span>
@@ -536,19 +594,21 @@ export const Verify: React.FC<VerifyProps> = ({
               <button
                 type="button"
                 onClick={() => setZoomLevel((z) => Math.max(0.75, z - 0.25))}
-                className="p-1 text-stone-600 hover:bg-stone-200 rounded cursor-pointer"
+                className="p-1.5 min-w-[32px] min-h-[32px] flex items-center justify-center text-stone-600 hover:bg-stone-200 rounded cursor-pointer transition-colors"
                 title="Zoom Out"
+                aria-label="ज़ूम घटाएँ (Zoom Out)"
               >
                 <ZoomOut className="w-3.5 h-3.5" />
               </button>
-              <span className="text-[11px] font-mono font-semibold text-stone-500 w-10 text-center">
+              <span className="text-[11px] font-mono font-semibold text-stone-600 w-10 text-center">
                 {Math.round(zoomLevel * 100)}%
               </span>
               <button
                 type="button"
                 onClick={() => setZoomLevel((z) => Math.min(2.5, z + 0.25))}
-                className="p-1 text-stone-600 hover:bg-stone-200 rounded cursor-pointer"
+                className="p-1.5 min-w-[32px] min-h-[32px] flex items-center justify-center text-stone-600 hover:bg-stone-200 rounded cursor-pointer transition-colors"
                 title="Zoom In"
+                aria-label="ज़ूम बढ़ाएँ (Zoom In)"
               >
                 <ZoomIn className="w-3.5 h-3.5" />
               </button>
@@ -592,7 +652,9 @@ export const Verify: React.FC<VerifyProps> = ({
         </div>
 
         {/* Right Column (7 Cols): Word-by-Word Live Learning Verification Cards */}
-        <div className="lg:col-span-7 bg-white rounded-2xl border border-stone-200 shadow-sm flex flex-col overflow-hidden max-h-[82vh]">
+        <div className={`lg:col-span-7 bg-white rounded-2xl border border-stone-200 shadow-sm flex flex-col overflow-hidden max-h-[82vh] ${
+          mobileViewMode === 'image' ? 'hidden lg:flex' : 'flex'
+        }`}>
           {/* Controls & Filter Bar with Mode Switcher */}
           <div className="p-3 border-b border-stone-200 bg-stone-50 flex flex-wrap items-center justify-between gap-2.5">
             <div className="flex items-center gap-1.5 flex-wrap">

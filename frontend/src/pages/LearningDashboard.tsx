@@ -399,7 +399,7 @@ export const LearningDashboard: React.FC<LearningDashboardProps> = ({
               disabled={isExporting || isLoading}
               className="px-4 py-2 rounded-xl bg-white hover:bg-stone-50 border border-stone-300 text-stone-800 text-xs font-bold flex items-center gap-2 transition-colors shadow-2xs cursor-pointer disabled:opacity-50"
             >
-              <FolderDown className={`w-4 h-4 text-stone-600 ${isExporting ? 'animate-bounce' : ''}`} />
+              <FolderDown className={`w-4 h-4 ${isExporting ? 'animate-pulse text-amber-600' : 'text-stone-600'}`} />
               <span>{isExporting ? 'डेटा संकलित हो रहा है...' : 'Export Training Data'}</span>
             </button>
 
@@ -708,6 +708,8 @@ export const LearningDashboard: React.FC<LearningDashboardProps> = ({
                             <img
                               src={cropUrl}
                               alt={row.ocr_text}
+                              loading="lazy"
+                              decoding="async"
                               onClick={() => setSelectedCropImage(cropUrl)}
                               onError={(e) => {
                                 (e.target as HTMLElement).style.display = 'none';

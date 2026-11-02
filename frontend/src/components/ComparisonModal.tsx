@@ -255,7 +255,7 @@ export const ComparisonModal: React.FC<ComparisonModalProps> = ({
                   <div className="text-lg font-bold text-stone-900 mt-0.5 font-mono">
                     {comparison.similarity_ratio ?? 0}%
                   </div>
-                  <span className="text-[10px] text-stone-400 mt-0.5">दोनों इंजनों के पाठ में सादृश्य</span>
+                  <span className="text-[10px] text-stone-500 font-medium mt-0.5">दोनों इंजनों के पाठ में सादृश्य</span>
                 </div>
 
                 {/* Speedup Factor */}

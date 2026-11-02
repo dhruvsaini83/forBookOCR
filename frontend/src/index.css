@@ -6,7 +6,7 @@
 
 :root {
   font-family: 'Inter', 'Noto Sans Devanagari', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  color-scheme: light dark;
+  color-scheme: light;
 }
 
 body {
@@ -67,12 +67,20 @@ html, body {
   overflow-x: hidden;
 }
 
-/* Reduced motion preference */
+/* Reduced motion preference - preserve meaningful state transitions while eliminating disorienting movement */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+  /* Preserve non-disorienting slow rotation for progress/loaders so busy state remains perceivable */
+  .animate-spin {
+    animation: spin 3s linear infinite !important;
+  }
+  .animate-pulse {
+    animation: none !important;
+    opacity: 0.85 !important;
   }
 }
