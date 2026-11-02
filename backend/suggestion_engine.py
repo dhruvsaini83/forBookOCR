@@ -296,3 +296,4 @@ def generate_suggestions(
                 })
 
     return suggestions
+

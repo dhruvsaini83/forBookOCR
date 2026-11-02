@@ -42,3 +42,8 @@ vaniscript-hindi-ocr/
 # Dynamic User Words Dictionary (Tesseract)
 user_words/
 backend/user_words/
+
+
+# Tesseract Model Fine-Tuning Dataset Exports
+training_data/
+backend/training_data/

@@ -1601,6 +1601,34 @@ def get_page_suggestions_endpoint(
         "total": len(suggestions)
     }
 
+@app.get("/api/books/{book_id}/training/status")
+def get_book_training_status_endpoint(
+    book_id: str,
+    min_required: int = Query(500, ge=1)
+):
+    """
+    Checks if enough verified word corrections exist to fine-tune Tesseract.
+    Returns status: total_corrections, ready_for_training, training_data_path, message.
+    """
+    from scripts.export_training_data import check_training_readiness
+    status = check_training_readiness(book_id=book_id, min_required=min_required)
+    return status
+
+@app.post("/api/books/{book_id}/training/export")
+def export_book_training_data_endpoint(
+    book_id: str,
+    min_required: int = Query(500, ge=1),
+    force: bool = Query(False)
+):
+    """
+    Exports verified word corrections into Tesseract training dataset.
+    Generates images, .gt.txt, .box, .lstmf, all_gt.txt and training_list.txt.
+    """
+    from scripts.export_training_data import export_training_data
+    res = export_training_data(book_id=book_id, min_required=min_required, force=force)
+    return res
+
+
 
 
 
