@@ -227,6 +227,39 @@ def upload_processed(book_id: str, page_number: int, file_bytes: bytes) -> str:
 
 
 
+def upload_fine_tuned_model(book_id: str, file_bytes: bytes) -> str:
+    """Uploads fine-tuned Tesseract LSTM model to fine_tuned_models/{book_id}/hin.traineddata."""
+    if not file_bytes:
+        raise ValueError("Model file content is empty.")
+    book_str = str(book_id).strip() if book_id else "general"
+    target_path = f"fine_tuned_models/{book_str}/hin.traineddata"
+    return _stage_and_upload(target_path, file_bytes, "application/octet-stream")
+
+
+def download_model_from_storage(book_id: str, local_dest: Path) -> bool:
+    """Downloads fine-tuned model for book_id from R2 or local fallback mirror into local_dest."""
+    book_str = str(book_id).strip() if book_id else "general"
+    target_path = f"fine_tuned_models/{book_str}/hin.traineddata"
+    
+    mirror_path = LOCAL_STORAGE_FALLBACK_DIR / target_path
+    if mirror_path.exists() and mirror_path.stat().st_size > 0:
+        local_dest.parent.mkdir(parents=True, exist_ok=True)
+        import shutil
+        shutil.copyfile(mirror_path, local_dest)
+        return True
+
+    client = get_s3_client()
+    if client and R2_BUCKET:
+        try:
+            local_dest.parent.mkdir(parents=True, exist_ok=True)
+            client.download_file(R2_BUCKET, target_path, str(local_dest))
+            return local_dest.exists() and local_dest.stat().st_size > 0
+        except Exception:
+            return False
+
+    return False
+
+
 def upload_crop(book_id: Optional[str], correction_id: str, file_bytes: bytes) -> str:
     """Uploads an extracted word-level image crop to crops/{book_id}/{correction_id}.jpg."""
     if not file_bytes:

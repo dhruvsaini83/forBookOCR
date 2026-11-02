@@ -47,3 +47,12 @@ backend/user_words/
 # Tesseract Model Fine-Tuning Dataset Exports
 training_data/
 backend/training_data/
+
+
+# Fine-Tuned Models & Base Weights
+fine_tuned_models/
+backend/fine_tuned_models/
+tessdata_best/
+backend/tessdata_best/
+output/
+backend/output/

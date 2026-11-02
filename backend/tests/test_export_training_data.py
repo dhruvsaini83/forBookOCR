@@ -145,3 +145,4 @@ def test_api_training_status():
     assert data["ready_for_training"] is False
     assert data["total_corrections"] == 0
     assert "अभी 0 corrections हैं, 500 होने पर training होगी" in data["message"]
+

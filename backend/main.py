@@ -1628,6 +1628,35 @@ def export_book_training_data_endpoint(
     res = export_training_data(book_id=book_id, min_required=min_required, force=force)
     return res
 
+@app.post("/api/books/{book_id}/training/finetune")
+def finetune_book_endpoint(
+    book_id: str,
+    max_iterations: int = Query(500, ge=10, le=10000)
+):
+    """
+    Fine-tunes the base Hindi LSTM model on the book's verified text.
+    Produces fine-tuned hin.traineddata, uploads to R2, and tracks accuracy gain.
+    """
+    from scripts.finetune import finetune_book_model
+    result = finetune_book_model(book_id=book_id, max_iterations=max_iterations)
+    return {
+        "success": True,
+        "book_id": book_id,
+        "status": "completed",
+        "result": result
+    }
+
+@app.get("/api/books/{book_id}/training/result")
+def get_book_training_result_endpoint(book_id: str):
+    """
+    Retrieves the fine-tuning evaluation results:
+    { "old_accuracy": "72%", "new_accuracy": "93%", "model_path": "..." }
+    """
+    from scripts.finetune import get_training_result
+    result = get_training_result(book_id=book_id)
+    return result
+
+
 
 
 
