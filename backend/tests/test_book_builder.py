@@ -5,8 +5,9 @@ Tests:
 2. Combined text formatting with 'Page X' header and separator.
 3. POST /api/books/{book_id}/builder/remove - removes page and regenerates text.
 4. POST /api/books/{book_id}/builder/reorder - reorders by page_order and regenerates text.
-5. GET /api/books/{book_id}/builder - returns builder collection with included pages.
+5. GET /api/books/{book_id}/builder - returns builder collection with included pages and copyable combined text.
 6. PUT /api/books/{book_id}/builder/edit - updates combined_text without mutating page records.
+7. Duplicate prevention: adding existing page_id does not create duplicate entries or duplicate text blocks.
 """
 
 import sys
@@ -111,6 +112,32 @@ def test_builder_add_verified_pages_and_format(client, test_book):
     assert "Page 2\nभजन क्रमांक 2" in combined
 
 
+def test_builder_prevent_duplicate_page_addition(client, test_book):
+    """Adding an already included page should not duplicate it in included_pages or combined_text."""
+    book_id = test_book["id"]
+    p1_id = _insert_test_page(
+        book_id,
+        page_number=1,
+        upload_order=1,
+        status="COMPLETED",
+        confirmed_text="श्री गणेशाय नमः"
+    )
+
+    # First add
+    res1 = client.post(f"/api/books/{book_id}/builder/add", json={"page_ids": [p1_id]})
+    assert res1.status_code == 200
+
+    # Add same page again
+    res2 = client.post(f"/api/books/{book_id}/builder/add", json={"page_ids": [p1_id]})
+    assert res2.status_code == 200
+    builder = res2.json()["builder"]
+
+    # Verify no duplication
+    assert builder["included_pages"].count(p1_id) == 1
+    assert builder["page_order"].count(1) == 1
+    assert builder["combined_text"].count("Page 1") == 1
+
+
 def test_builder_remove_page(client, test_book):
     book_id = test_book["id"]
     p1_id = _insert_test_page(book_id, page_number=10, upload_order=1, status="COMPLETED", confirmed_text="Text 10")
@@ -151,6 +178,26 @@ def test_builder_reorder_pages(client, test_book):
 
     assert pos_page3 != -1 and pos_page1 != -1 and pos_page2 != -1
     assert pos_page3 < pos_page1 < pos_page2
+
+
+def test_builder_copy_ready_text(client, test_book):
+    """GET /api/books/{book_id}/builder returns cleanly formatted text ready for clipboard copy."""
+    book_id = test_book["id"]
+    p1_id = _insert_test_page(book_id, page_number=1, upload_order=1, status="COMPLETED", confirmed_text="प्रथम भजन\nजय जय श्री राधे")
+    p2_id = _insert_test_page(book_id, page_number=2, upload_order=2, status="COMPLETED", confirmed_text="द्वितीय भजन\nगोविन्द बोलो हरि गोपाल बोलो")
+
+    client.post(f"/api/books/{book_id}/builder/add", json={"page_ids": [p1_id, p2_id]})
+
+    get_res = client.get(f"/api/books/{book_id}/builder")
+    assert get_res.status_code == 200
+    builder_data = get_res.json()["builder"]
+
+    text_to_copy = builder_data["combined_text"]
+    assert len(text_to_copy) > 0
+    # Expected format: Page 1 ... separator ... Page 2
+    assert "Page 1\nप्रथम भजन\nजय जय श्री राधे" in text_to_copy
+    assert "-------------------------" in text_to_copy
+    assert "Page 2\nद्वितीय भजन\nगोविन्द बोलो हरि गोपाल बोलो" in text_to_copy
 
 
 def test_builder_edit_text_preserves_page_records(client, test_book):

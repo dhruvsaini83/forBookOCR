@@ -119,6 +119,27 @@ def get_pages_for_export(
     builder = db.get_or_create_book_builder(book_id)
     page_order = builder.get("page_order") or []
 
+    # If no pages are in database pages table, synthesize from builder's combined text
+    if not raw_pages and builder.get("combined_text"):
+        combined_text = builder["combined_text"].strip()
+        blocks = re.split(r'\n\s*-------------------------\s*\n', combined_text)
+        synthesized = []
+        for idx, block in enumerate(blocks):
+            b_str = block.strip()
+            if not b_str:
+                continue
+            p_match = re.match(r'^(?:Page|पृष्ठ)\s*([०-९0-9]+)', b_str, re.IGNORECASE)
+            p_num = int(p_match.group(1)) if p_match else (idx + 1)
+            synthesized.append({
+                "id": f"page-{book_id}-{p_num}",
+                "page_number": p_num,
+                "upload_order": idx + 1,
+                "status": "verified",
+                "verified_text": b_str,
+                "word_tokens": []
+            })
+        raw_pages = synthesized
+
     # Map pages by page_number and id
     page_map = {int(p["page_number"]): p for p in raw_pages if p.get("page_number") is not None}
     id_map = {str(p["id"]): p for p in raw_pages if p.get("id")}

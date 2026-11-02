@@ -6,7 +6,7 @@ import re
 import hashlib
 from pathlib import Path
 from typing import Optional, List
-from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Query, BackgroundTasks
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Query, BackgroundTasks, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse, Response
@@ -25,6 +25,8 @@ from core.config import (
     DOC_STATUS_OCR_COMPLETE, DOC_STATUS_NEEDS_REVIEW, DOC_STATUS_FAILED
 )
 import core.database as db
+import storage
+import export
 from core.stage1_preprocessing import preprocess_image_pipeline
 from core.stage2_ocr import run_primary_ocr
 from core.stage3_cross_verification import run_cross_verification
@@ -104,6 +106,31 @@ app.add_middleware(
 
 # Serve uploaded and processed images statically
 app.mount("/storage", StaticFiles(directory=str(DATA_DIR)), name="storage")
+
+# ==========================================
+# Application Startup Lifecycle
+# ==========================================
+@app.on_event("startup")
+def startup_event():
+    """Initializes tables and tests Cloudflare R2 connection if configured."""
+    db.init_db()
+    try:
+        from library import init_library_tables
+        init_library_tables()
+    except Exception as lib_err:
+        print(f"Library table init notice: {lib_err}")
+
+    # Storage provider verification
+    storage_provider = os.environ.get("STORAGE_PROVIDER", "local").strip().lower()
+    if storage_provider == "r2" or storage.is_r2_configured():
+        conn_res = storage.test_r2_connection()
+        if conn_res["connected"]:
+            print(f"✓ Cloudflare R2 connection successful: connected to bucket '{conn_res['bucket']}'.")
+        else:
+            print(f"⚠ Cloudflare R2 check: {conn_res['message']}")
+    else:
+        print("STORAGE_PROVIDER is local. Local filesystem storage active.")
+
 
 # Request Models
 class WordUpdateRequest(BaseModel):
@@ -1875,7 +1902,7 @@ def delete_page_endpoint(
     return {
         "success": True,
         "page_id": page_id,
-        "original_image_deleted": original_deleted,
+        "original_image_deleted": original_deleted, "original_deleted": original_deleted,
         "message": f"Page '{page_id}' removed." + (" Original image also permanently deleted." if original_deleted else " Original image preserved in storage.")
     }
 
@@ -2335,6 +2362,241 @@ def search_book_bhajans_endpoint(
         "results": results,
         "bhajans": results
     }
+
+
+# ==========================================
+# Book Export Endpoint
+# ==========================================
+import export
+
+
+@app.get("/api/books/{book_id}/export")
+def export_book_endpoint(
+    book_id: str,
+    format: str = Query("pdf", description="Export format: docx | pdf | txt | json | html | md"),
+    scope: str = Query("complete", description="Export scope: complete | selected"),
+    pages: Optional[str] = Query(None, description="Comma-separated page numbers or IDs when scope=selected"),
+    include_page_numbers: bool = Query(True, description="Include page numbers"),
+    include_page_breaks: bool = Query(True, description="Include page breaks between pages"),
+    only_verified: bool = Query(False, description="Export only verified pages"),
+    download: bool = Query(False, description="Stream binary file directly for download")
+):
+    book = db.get_book_by_id(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail=f"Book with ID '{book_id}' not found.")
+
+    options = {
+        "include_page_numbers": include_page_numbers,
+        "include_page_breaks": include_page_breaks,
+        "only_verified": only_verified
+    }
+
+    try:
+        res = export.export_book(
+            book_id=book_id,
+            format_type=format,
+            options=options,
+            scope=scope,
+            pages_param=pages
+        )
+    except ValueError as val_err:
+        raise HTTPException(status_code=400, detail=str(val_err))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
+
+    if download:
+        mime_types = {
+            "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "pdf": "application/pdf",
+            "txt": "text/plain; charset=utf-8",
+            "json": "application/json",
+            "html": "text/html; charset=utf-8",
+            "md": "text/markdown; charset=utf-8"
+        }
+        media_type = mime_types.get(res["format"], "application/octet-stream")
+        import urllib.parse
+        safe_book_name = re.sub(r'[/\\:*?"<>|]', '_', book.get("name") or "book")
+        download_filename = f"{safe_book_name}_{res['filename']}"
+        return Response(
+            content=res["file_bytes"],
+            media_type=media_type,
+            headers={
+                "Content-Disposition": f"attachment; filename=\"book_export_{res['filename']}\"; filename*=UTF-8''{urllib.parse.quote(download_filename)}",
+                "X-Presigned-Url": res["presigned_url"]
+            }
+        )
+
+    return {
+        "success": True,
+        "book_id": book_id,
+        "book_name": book.get("name"),
+        "format": res["format"],
+        "filename": res["filename"],
+        "r2_url": res["r2_url"],
+        "presigned_url": res["presigned_url"],
+        "download_url": res["download_url"],
+        "file_size": res["file_size"],
+        "pages_count": res["pages_count"]
+    }
+
+
+# ==========================================
+# Dashboard Metrics Endpoint
+# ==========================================
+@app.get("/api/books/{book_id}/dashboard")
+def get_book_dashboard_metrics_endpoint(book_id: str):
+    book = db.get_book_by_id(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail=f"Book with ID '{book_id}' not found.")
+
+    total = book.get("total_pages") or 400
+    pages = db.get_pages_for_book(book_id)
+    uploaded = len(pages)
+
+    ocr_completed = 0
+    needs_review = 0
+    verified = 0
+
+    for p in pages:
+        p_status = (p.get("status") or "").lower()
+        has_ocr = bool((p.get("raw_ocr_text") or p.get("original_ocr_text") or "").strip())
+        has_verified_text = bool((p.get("confirmed_text") or p.get("reviewed_text") or p.get("verified_text") or "").strip())
+
+        if p_status in ("completed", "ocr_complete", "verified", "needs_review") or has_ocr:
+            ocr_completed += 1
+
+        if p_status == "verified" or has_verified_text:
+            verified += 1
+        elif p_status in ("needs_review", "uncertain", "flagged"):
+            needs_review += 1
+
+    # Added to book from BookBuilder
+    builder = db.get_or_create_book_builder(book_id)
+    included = builder.get("included_pages") or []
+    added_to_book = len(included)
+
+    # Exported status
+    exported = storage.has_exports(book_id)
+
+    return {
+        "success": True,
+        "book_id": book_id,
+        "book_name": book.get("name"),
+        "total": total,
+        "uploaded": uploaded,
+        "ocr_completed": ocr_completed,
+        "needs_review": needs_review,
+        "verified": verified,
+        "added_to_book": added_to_book,
+        "exported": exported
+    }
+
+
+# ==========================================
+# Background Task Queue & Progress Tracking
+# ==========================================
+import jobs
+
+class BatchProcessRequest(BaseModel):
+    batch_size: int = 20
+    engine: str = "tesseract"
+
+@app.post("/api/books/{book_id}/process-batch")
+def start_batch_process_endpoint(
+    book_id: str,
+    background_tasks: BackgroundTasks,
+    payload: Optional[BatchProcessRequest] = None
+):
+    book = db.get_book_by_id(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail=f"Book with ID '{book_id}' not found.")
+
+    batch_size = payload.batch_size if payload and payload.batch_size > 0 else 20
+    engine = payload.engine if payload and payload.engine else "tesseract"
+
+    pages = db.get_pages_for_book(book_id)
+    total_pages = len(pages) if pages else (book.get("total_pages") or 0)
+
+    job = jobs.job_manager.create_job(
+        book_id=book_id,
+        total_pages=total_pages,
+        batch_size=batch_size,
+        task_type="batch_ocr"
+    )
+
+    background_tasks.add_task(
+        jobs.execute_batch_ocr_sync,
+        job.job_id,
+        book_id,
+        batch_size,
+        engine
+    )
+
+    return {
+        "success": True,
+        "job_id": job.job_id,
+        "book_id": book_id,
+        "status": job.status,
+        "total_pages": job.total_pages,
+        "total_batches": job.total_batches,
+        "batch_size": job.batch_size,
+        "poll_url": f"/api/jobs/{job.job_id}",
+        "ws_url": f"/api/ws/jobs/{job.job_id}"
+    }
+
+
+@app.get("/api/jobs/{job_id}")
+def get_job_status_endpoint(job_id: str):
+    job = jobs.job_manager.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job with ID '{job_id}' not found.")
+    return {
+        "success": True,
+        "job": job.to_dict()
+    }
+
+
+@app.get("/api/jobs")
+def list_jobs_endpoint(book_id: Optional[str] = None, limit: int = 50):
+    job_list = jobs.job_manager.list_jobs(book_id=book_id, limit=limit)
+    return {
+        "success": True,
+        "count": len(job_list),
+        "jobs": job_list
+    }
+
+
+@app.websocket("/api/ws/jobs/{job_id}")
+async def websocket_job_progress(websocket: WebSocket, job_id: str):
+    await jobs.job_manager.connect_ws(job_id, websocket)
+    try:
+        while True:
+            data = await websocket.receive_text()
+            if data == "ping":
+                await websocket.send_text("pong")
+    except WebSocketDisconnect:
+        jobs.job_manager.disconnect_ws(job_id, websocket)
+    except Exception:
+        jobs.job_manager.disconnect_ws(job_id, websocket)
+
+
+# ==========================================
+# Daily Automatic Backup Endpoint
+# ==========================================
+import backup
+
+@app.post("/api/admin/backup")
+def trigger_backup_endpoint():
+    try:
+        res = backup.run_full_backup()
+        return {
+            "success": True,
+            "message": "Full daily backup completed successfully.",
+            "backup": res
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Backup failed: {str(e)}")
+
 
 
 # Mount built frontend assets if dist exists

@@ -1,0 +1,33 @@
+{
+  "book_id": "test-hindi-21142fdd",
+  "book_name": "श्री ब्रह्मानंद भजन माला",
+  "language": "hin",
+  "total_book_pages": 2,
+  "exported_pages_count": 2,
+  "export_timestamp": "2026-11-02T18:49:02.983591",
+  "format": "json",
+  "pages": [
+    {
+      "page_id": "p1_e8d68e",
+      "page_number": 1,
+      "upload_order": 1,
+      "status": "verified",
+      "text": "॥ श्री गणेशाय नमः ॥\n\nवक्रतुण्ड महाकाय सूर्यकोटि समप्रभ ।\nनिर्विघ्नं कुरु मे देव सर्वकार्येषु सर्वदा ॥\n\nभजन क्रमांक 1 - गुरु वन्दना\nगुरुर्ब्रह्मा गुरुर्विष्णुः गुरुर्देवो महेश्वरः ।\nगुरुः साक्षात् परं ब्रह्म तस्मै श्रीगुरवे नमः ॥",
+      "tokens_count": 0,
+      "tokens": [],
+      "original_image_path": "/storage/originals/test-hindi-21142fdd/1.jpg",
+      "preprocessed_image_path": ""
+    },
+    {
+      "page_id": "p2_1e2c78",
+      "page_number": 2,
+      "upload_order": 2,
+      "status": "verified",
+      "text": "भजन क्रमांक 2 - सच्चिदानन्द ध्यान\nसच्चिदानन्द रूपाय विश्वोत्पत्यादि हेतवे ।\nतापत्रय विनाशाय श्रीकृष्णाय वयं नुमः ॥\n\nविद्या, ज्ञान, क्षत्रिय, उज्ज्वल दृष्टि, भक्त शिरोमणि",
+      "tokens_count": 0,
+      "tokens": [],
+      "original_image_path": "/storage/originals/test-hindi-21142fdd/2.jpg",
+      "preprocessed_image_path": ""
+    }
+  ]
+}

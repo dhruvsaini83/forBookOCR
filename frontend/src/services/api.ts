@@ -22,7 +22,11 @@ import type {
   BuilderDraftItem,
   BhajanSearchFilter,
   BookBhajansResponse,
-  BhajanSearchResponse
+  BhajanSearchResponse,
+  ExportFormat,
+  ExportScope,
+  BookExportOptions,
+  BookExportResponse
 } from '../types';
 
 export const BACKEND_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
@@ -500,5 +504,47 @@ export const api = {
     const params = new URLSearchParams({ q: query, filter });
     const res = await fetch(`${API_BASE}/books/${bookId}/search?${params.toString()}`);
     return handleResponse(res, 'Failed to search bhajans');
+  },
+
+  async exportBook(
+    bookId: string,
+    format: ExportFormat = 'pdf',
+    scope: ExportScope = 'complete',
+    pages?: string,
+    options?: BookExportOptions
+  ): Promise<BookExportResponse> {
+    const params = new URLSearchParams({
+      format,
+      scope,
+      include_page_numbers: options?.include_page_numbers !== false ? 'true' : 'false',
+      include_page_breaks: options?.include_page_breaks !== false ? 'true' : 'false',
+      only_verified: options?.only_verified ? 'true' : 'false',
+    });
+    if (pages) {
+      params.append('pages', pages);
+    }
+    const res = await fetch(`${API_BASE}/books/${bookId}/export?${params.toString()}`);
+    return handleResponse(res, 'Failed to export book');
+  },
+
+  getBookExportDirectUrl(
+    bookId: string,
+    format: ExportFormat = 'pdf',
+    scope: ExportScope = 'complete',
+    pages?: string,
+    options?: BookExportOptions
+  ): string {
+    const params = new URLSearchParams({
+      format,
+      scope,
+      include_page_numbers: options?.include_page_numbers !== false ? 'true' : 'false',
+      include_page_breaks: options?.include_page_breaks !== false ? 'true' : 'false',
+      only_verified: options?.only_verified ? 'true' : 'false',
+      download: 'true'
+    });
+    if (pages) {
+      params.append('pages', pages);
+    }
+    return `${API_BASE}/books/${bookId}/export?${params.toString()}`;
   },
 };

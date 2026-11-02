@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   BookOpen, Plus, Search, Edit3, Trash2, CheckCircle2,
   Clock, AlertTriangle, X, Image as ImageIcon, UploadCloud,
-  ArrowLeft, RefreshCw, ShieldCheck, Sparkles, Layers, ArrowUpDown, BookMarked
+  ArrowLeft, RefreshCw, ShieldCheck, Sparkles, Layers, ArrowUpDown, BookMarked, Download
 } from 'lucide-react';
 import { api, getStorageUrl } from '../services/api';
 import type { BookData, BookStatus, CreateBookPayload, UpdateBookPayload, DashboardMetrics } from '../types';
@@ -15,6 +15,7 @@ interface BooksProps {
   onSelectBook?: (bookId: string) => void;
   onOpenBookBuilder?: (bookId: string) => void;
   onOpenLibrary?: (bookId: string) => void;
+  onOpenExport?: (bookId: string) => void;
 }
 
 export const Books: React.FC<BooksProps> = ({
@@ -22,7 +23,8 @@ export const Books: React.FC<BooksProps> = ({
   onNavigateHome,
   onSelectBook,
   onOpenBookBuilder,
-  onOpenLibrary
+  onOpenLibrary,
+  onOpenExport
 }) => {
   const isHi = lang === 'hi';
 
@@ -605,6 +607,17 @@ export const Books: React.FC<BooksProps> = ({
                         >
                           <Layers className="w-3.5 h-3.5 text-vedic-700" />
                           <span>{isHi ? 'संकलक' : 'Builder'}</span>
+                        </button>
+                      )}
+                      {onOpenExport && (
+                        <button
+                          type="button"
+                          onClick={() => onOpenExport(book.id)}
+                          className="p-1.5 rounded-lg text-emerald-700 hover:text-emerald-900 hover:bg-emerald-50 transition-colors border border-transparent hover:border-emerald-200"
+                          title={isHi ? 'ग्रन्थ निर्यात (DOCX, PDF, TXT...)' : 'Export book'}
+                          aria-label="Export book"
+                        >
+                          <Download className="w-4 h-4 text-emerald-700" />
                         </button>
                       )}
                       <button

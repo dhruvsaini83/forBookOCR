@@ -1,0 +1,33 @@
+{
+  "book_id": "test-api-exp-015d4373",
+  "book_name": "शिव मानस पूजा",
+  "language": "san",
+  "total_book_pages": 3,
+  "exported_pages_count": 2,
+  "export_timestamp": "2026-11-02T18:28:07.473681",
+  "format": "json",
+  "pages": [
+    {
+      "page_id": "page-test-api-exp-015d4373-1",
+      "page_number": 1,
+      "upload_order": 1,
+      "status": "verified",
+      "text": "Page 1\nरत्नैः कल्पितमासनं हिमजलैः स्नानं च दिव्याम्बरं\nनानारत्नविभूषितं मृगमदामोदाङ्कितं चन्दनम्",
+      "tokens_count": 0,
+      "tokens": [],
+      "original_image_path": "",
+      "preprocessed_image_path": ""
+    },
+    {
+      "page_id": "page-test-api-exp-015d4373-2",
+      "page_number": 2,
+      "upload_order": 2,
+      "status": "verified",
+      "text": "Page 2\nजातीचम्पकबिल्वपत्ररचितं पुष्पं च धूपं तथा\nदीपं देव दयानिधे पशुपते हृत्कल्पितं गृह्यताम्",
+      "tokens_count": 0,
+      "tokens": [],
+      "original_image_path": "",
+      "preprocessed_image_path": ""
+    }
+  ]
+}

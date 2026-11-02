@@ -440,3 +440,25 @@ export interface BhajanSearchResponse {
   results: BhajanItem[];
   bhajans: BhajanItem[];
 }
+
+export type ExportFormat = 'docx' | 'pdf' | 'txt' | 'json' | 'html' | 'md';
+export type ExportScope = 'complete' | 'selected';
+
+export interface BookExportOptions {
+  include_page_numbers?: boolean;
+  include_page_breaks?: boolean;
+  only_verified?: boolean;
+}
+
+export interface BookExportResponse {
+  success: boolean;
+  book_id: string;
+  book_name?: string;
+  format: ExportFormat;
+  filename: string;
+  r2_url: string;
+  presigned_url: string;
+  download_url: string;
+  file_size: number;
+  pages_count: number;
+}

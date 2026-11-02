@@ -1,3 +1,4 @@
+from datetime import datetime
 """Cloudflare R2 / S3-compatible Object Storage for VaniScript.
 
 Provides:
@@ -319,3 +320,84 @@ def get_presigned_url(path: str, expiry: int = 3600) -> str:
     # Local fallback URL
     return get_file_url(clean_path)
 
+
+def test_r2_connection() -> Dict[str, Any]:
+    """Tests Cloudflare R2 connection.
+    Returns:
+        dict: {"connected": bool, "bucket": str, "provider": "r2" | "local", "message": str}
+    """
+    if not is_r2_configured():
+        return {
+            "connected": False,
+            "bucket": R2_BUCKET,
+            "provider": "local",
+            "message": "R2 credentials not configured. Local storage fallback active."
+        }
+    client = get_s3_client()
+    try:
+        client.head_bucket(Bucket=R2_BUCKET)
+        return {
+            "connected": True,
+            "bucket": R2_BUCKET,
+            "provider": "r2",
+            "message": f"Successfully connected to Cloudflare R2 bucket '{R2_BUCKET}'."
+        }
+    except Exception as e:
+        return {
+            "connected": False,
+            "bucket": R2_BUCKET,
+            "provider": "r2",
+            "message": f"R2 connection failed: {str(e)}"
+        }
+
+
+def list_storage_files(prefix: str = "") -> List[Dict[str, Any]]:
+    """Lists files in R2 (or local mirror) matching a prefix."""
+    clean_prefix = prefix.lstrip("/")
+    files = []
+    client = get_s3_client()
+    if client:
+        try:
+            paginator = client.get_paginator("list_objects_v2")
+            for page in paginator.paginate(Bucket=R2_BUCKET, Prefix=clean_prefix):
+                for obj in page.get("Contents", []):
+                    files.append({
+                        "key": obj["Key"],
+                        "size": obj["Size"],
+                        "last_modified": obj["LastModified"].isoformat() if hasattr(obj["LastModified"], "isoformat") else str(obj["LastModified"]),
+                        "etag": obj.get("ETag", "").strip('"')
+                    })
+            return files
+        except Exception as e:
+            logger.warning(f"Failed to list R2 files with prefix '{clean_prefix}': {e}")
+
+    # Local fallback
+    local_root = LOCAL_STORAGE_FALLBACK_DIR / clean_prefix
+    if local_root.exists():
+        if local_root.is_dir():
+            for p in local_root.rglob("*"):
+                if p.is_file():
+                    rel_key = str(p.relative_to(LOCAL_STORAGE_FALLBACK_DIR)).replace("\\", "/")
+                    stat = p.stat()
+                    files.append({
+                        "key": rel_key,
+                        "size": stat.st_size,
+                        "last_modified": datetime.fromtimestamp(stat.st_mtime).isoformat() if "datetime" in globals() else str(stat.st_mtime),
+                        "etag": ""
+                    })
+        elif local_root.is_file():
+            rel_key = str(local_root.relative_to(LOCAL_STORAGE_FALLBACK_DIR)).replace("\\", "/")
+            stat = local_root.stat()
+            files.append({
+                "key": rel_key,
+                "size": stat.st_size,
+                "last_modified": str(stat.st_mtime),
+                "etag": ""
+            })
+    return files
+
+
+def has_exports(book_id: str) -> bool:
+    """Returns True if any export files exist for the given book_id."""
+    files = list_storage_files(f"exports/{book_id}")
+    return len(files) > 0
