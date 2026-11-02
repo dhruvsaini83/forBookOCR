@@ -233,7 +233,15 @@ export const BookBuilder: React.FC<BookBuilderProps> = ({
 
   // State: Book Selection
   const [booksList, setBooksList] = useState<BookData[]>([]);
-  const [selectedBookId, setSelectedBookId] = useState<string>(initialBookId || '');
+  const [selectedBookId, setSelectedBookId] = useState<string>(() => {
+    if (initialBookId) return initialBookId;
+    if (typeof window !== 'undefined') {
+      const match = window.location.pathname.match(/\/books\/([^/]+)\/builder/) ||
+                    window.location.pathname.match(/\/builder\/([^/]+)/);
+      if (match) return match[1];
+    }
+    return '';
+  });
   const [activeBook, setActiveBook] = useState<BookData | null>(null);
   void activeBook;
 
@@ -304,9 +312,12 @@ export const BookBuilder: React.FC<BookBuilderProps> = ({
         const res = await api.listBooks();
         if (res && res.books && res.books.length > 0) {
           setBooksList(res.books);
-          if (!selectedBookId) {
-            setSelectedBookId(res.books[0].id);
-          }
+          setSelectedBookId((prev) => {
+            if (prev && res.books.some((b: BookData) => b.id === prev)) {
+              return prev;
+            }
+            return res.books[0].id;
+          });
         }
       } catch (err: any) {
         console.error('Failed to load books list:', err);
@@ -766,7 +777,13 @@ export const BookBuilder: React.FC<BookBuilderProps> = ({
               <BookOpen className="w-4 h-4 text-vedic-700 ml-1.5 shrink-0" />
               <select
                 value={selectedBookId}
-                onChange={(e) => setSelectedBookId(e.target.value)}
+                onChange={(e) => {
+                  const newId = e.target.value;
+                  setSelectedBookId(newId);
+                  if (typeof window !== 'undefined') {
+                    window.history.pushState({}, '', `/builder/${newId}`);
+                  }
+                }}
                 className="bg-transparent text-xs sm:text-sm font-semibold text-stone-900 font-devanagari focus:outline-none pr-3 cursor-pointer max-w-[200px] truncate"
               >
                 {booksList.map((b) => (
@@ -955,6 +972,18 @@ export const BookBuilder: React.FC<BookBuilderProps> = ({
               <div className="p-8 text-center text-stone-400 font-devanagari text-xs">
                 <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-vedic-600" />
                 <span>{isHi ? 'पृष्ठ लोड हो रहे हैं...' : 'Loading pages...'}</span>
+              </div>
+            ) : allPages.length === 0 ? (
+              <div className="p-6 text-center bg-stone-50 rounded-2xl border border-stone-200/60 text-stone-500 font-devanagari text-xs flex flex-col items-center justify-center gap-2">
+                <FileText className="w-6 h-6 text-stone-400" />
+                <p className="font-semibold text-stone-800">
+                  {isHi ? 'इस ग्रन्थ में अभी कोई पृष्ठ संलग्न नहीं है' : 'No pages attached to this book yet'}
+                </p>
+                <p className="text-[11px] text-stone-400">
+                  {isHi
+                    ? 'आप सीधे पूर्ण सम्पादक में पाठ लिख/सम्पादित कर सकते हैं अथवा स्कैनर से पृष्ठ जोड़ सकते हैं।'
+                    : 'You can write or edit text directly in the full editor on the right or scan new pages.'}
+                </p>
               </div>
             ) : displayedLeftPages.length === 0 ? (
               <div className="p-8 text-center bg-stone-50 rounded-2xl border border-stone-200/60 text-stone-500 font-devanagari text-xs">
@@ -1209,24 +1238,60 @@ export const BookBuilder: React.FC<BookBuilderProps> = ({
           </div>
 
           {/* Center/Right Panel Content: Render View based on activeViewMode */}
-          {includedPages.length === 0 ? (
-            <div className="p-12 text-center bg-stone-50/60 rounded-3xl border border-dashed border-stone-300 my-4 flex flex-col items-center justify-center gap-3">
-              <div className="w-14 h-14 rounded-2xl bg-stone-100 border border-stone-200 text-stone-400 flex items-center justify-center text-xl font-bold font-devanagari">
-                ग्र
-              </div>
-              <h3 className="text-base font-bold text-stone-800 font-devanagari">
-                {isHi ? 'संकलक में कोई पृष्ठ नहीं जोड़ा गया है' : 'No pages added to builder yet'}
-              </h3>
-              <p className="text-xs text-stone-500 font-devanagari max-w-sm">
-                {isHi
-                  ? 'बाएँ पैनल से सत्यापित पृष्ठ चुनें और "पुस्तक में जोड़ें" बटन दबाकर ग्रन्थ का संकलन प्रारंभ करें।'
-                  : 'Select verified pages from the left panel and click "Add to Book" to start compiling.'}
-              </p>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-4">
-              {/* 1. BLOCKS VIEW (Drag-and-Drop Sortable Page Blocks) */}
-              {(activeViewMode === 'blocks' || activeViewMode === 'split') && (
+          <div className="flex flex-col gap-4">
+            {/* 1. BLOCKS VIEW (Drag-and-Drop Sortable Page Blocks) */}
+            {(activeViewMode === 'blocks' || activeViewMode === 'split') && (
+              includedPages.length === 0 ? (
+                activeViewMode === 'blocks' ? (
+                  combinedText && combinedText.trim().length > 0 ? (
+                    <div className="p-8 bg-amber-50/40 rounded-3xl border border-amber-200/80 my-2 flex flex-col items-center justify-center gap-3 text-center">
+                      <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center text-xl font-bold font-devanagari">
+                        ग्र
+                      </div>
+                      <div>
+                        <h3 className="text-base font-bold text-stone-900 font-devanagari">
+                          {isHi ? 'कोई स्कैन पृष्ठ ब्लॉक नहीं जुड़ा है' : 'No page blocks compiled yet'}
+                        </h3>
+                        <p className="text-xs text-stone-600 font-devanagari mt-1 max-w-md">
+                          {isHi
+                            ? `इस पुस्तक में स्कैनर से कोई पृष्ठ ब्लॉक नहीं जुड़ा है, किन्तु आपका सहेजा गया ड्राफ्ट (${combinedText.split(/\s+/).filter(Boolean).length} शब्द) पूर्ण सम्पादक में सुरक्षित है।`
+                            : `No page blocks have been compiled from scans, but your saved draft (${combinedText.split(/\s+/).filter(Boolean).length} words) is safe in the editor.`}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setActiveViewMode('editor')}
+                        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-vedic-700 hover:bg-vedic-800 text-white font-bold text-xs sm:text-sm font-devanagari transition-colors shadow-2xs mt-1"
+                      >
+                        <FileText className="w-4 h-4" />
+                        <span>{isHi ? 'पूर्ण सम्पादक में पाठ देखें व सुधारें' : 'View & Edit in Full Editor'}</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="p-12 text-center bg-stone-50/60 rounded-3xl border border-dashed border-stone-300 my-4 flex flex-col items-center justify-center gap-3">
+                      <div className="w-14 h-14 rounded-2xl bg-stone-100 border border-stone-200 text-stone-400 flex items-center justify-center text-xl font-bold font-devanagari">
+                        ग्र
+                      </div>
+                      <h3 className="text-base font-bold text-stone-800 font-devanagari">
+                        {isHi ? 'संकलक में कोई पृष्ठ नहीं जोड़ा गया है' : 'No pages added to builder yet'}
+                      </h3>
+                      <p className="text-xs text-stone-500 font-devanagari max-w-sm">
+                        {isHi
+                          ? 'बाएँ पैनल से सत्यापित पृष्ठ चुनें और "पुस्तक में जोड़ें" बटन दबाकर ग्रन्थ का संकलन प्रारंभ करें।'
+                          : 'Select verified pages from the left panel and click "Add to Book" to start compiling.'}
+                      </p>
+                    </div>
+                  )
+                ) : (
+                  <div className="p-4 bg-stone-50 rounded-2xl border border-dashed border-stone-200 text-xs font-devanagari text-stone-500 flex items-center justify-between gap-2">
+                    <span>
+                      {isHi
+                        ? 'कोई स्कैन पृष्ठ ब्लॉक नहीं जुड़ा है (बाएँ पैनल से पृष्ठ जोड़ें)। नीचे सम्पूर्ण ग्रन्थ सम्पादक उपलब्ध है:'
+                        : 'No scan blocks compiled yet (add pages from left). Full Book Text Editor available below:'}
+                    </span>
+                  </div>
+                )
+              ) : (
                 <div className="flex flex-col gap-3">
                   <div className="flex items-center justify-between text-xs font-devanagari text-stone-500 px-1">
                     <span>
@@ -1279,40 +1344,40 @@ export const BookBuilder: React.FC<BookBuilderProps> = ({
                     </SortableContext>
                   </DndContext>
                 </div>
-              )}
+              )
+            )}
 
-              {/* 2. FULL TEXT EDITOR VIEW (Manual Add/Edit with 5s Auto-Save) */}
-              {(activeViewMode === 'editor' || activeViewMode === 'split') && (
-                <div className="flex flex-col gap-2 pt-2">
-                  <div className="flex items-center justify-between text-xs font-devanagari">
-                    <div className="flex items-center gap-1.5 font-bold text-stone-800">
-                      <FileText className="w-4 h-4 text-vedic-700" />
-                      <span>{isHi ? 'सम्पूर्ण ग्रन्थ सम्पादक (Full Text Editor)' : 'Full Book Text Editor'}</span>
-                    </div>
-                    <span className="text-[11px] text-stone-500 font-mono">
-                      {combinedText.length} वर्ण | {combinedText.split(/\s+/).filter(Boolean).length} शब्द
-                    </span>
+            {/* 2. FULL TEXT EDITOR VIEW (Manual Add/Edit with 5s Auto-Save) */}
+            {(activeViewMode === 'editor' || activeViewMode === 'split') && (
+              <div className="flex flex-col gap-2 pt-2">
+                <div className="flex items-center justify-between text-xs font-devanagari">
+                  <div className="flex items-center gap-1.5 font-bold text-stone-800">
+                    <FileText className="w-4 h-4 text-vedic-700" />
+                    <span>{isHi ? 'सम्पूर्ण ग्रन्थ सम्पादक (Full Text Editor)' : 'Full Book Text Editor'}</span>
                   </div>
-
-                  <p className="text-[11px] text-stone-500 font-devanagari">
-                    {isHi
-                      ? 'यहाँ आप सीधे पाठ में संशोधन, नए भजन, अध्याय शीर्षक अथवा भूमिका जोड़ सकते हैं। बदलाव स्वतः हर ५ सेकंड में सुरक्षित हो जाते हैं।'
-                      : 'You can directly edit the combined book text, add chapter titles, hymns, or forewords. Auto-saves every 5 seconds.'}
-                  </p>
-
-                  <div className="relative rounded-2xl border border-stone-300 overflow-hidden shadow-inner bg-white">
-                    <textarea
-                      value={combinedText}
-                      onChange={handleManualTextChange}
-                      rows={activeViewMode === 'split' ? 14 : 22}
-                      placeholder={isHi ? 'यहाँ ग्रन्थ का संकलित पाठ दिखाई देगा...' : 'Combined book text will appear here...'}
-                      className="w-full p-4 font-devanagari text-xs sm:text-sm text-stone-900 leading-relaxed focus:outline-none resize-y selection:bg-amber-100 bg-[#faf8f5]"
-                    />
-                  </div>
+                  <span className="text-[11px] text-stone-500 font-mono">
+                    {combinedText.length} वर्ण | {combinedText.split(/\s+/).filter(Boolean).length} शब्द
+                  </span>
                 </div>
-              )}
-            </div>
-          )}
+
+                <p className="text-[11px] text-stone-500 font-devanagari">
+                  {isHi
+                    ? 'यहाँ आप सीधे पाठ में संशोधन, नए भजन, अध्याय शीर्षक अथवा भूमिका जोड़ सकते हैं। बदलाव स्वतः हर ५ सेकंड में सुरक्षित हो जाते हैं।'
+                    : 'You can directly edit the combined book text, add chapter titles, hymns, or forewords. Auto-saves every 5 seconds.'}
+                </p>
+
+                <div className="relative rounded-2xl border border-stone-300 overflow-hidden shadow-inner bg-white">
+                  <textarea
+                    value={combinedText}
+                    onChange={handleManualTextChange}
+                    rows={activeViewMode === 'split' ? 14 : 22}
+                    placeholder={isHi ? 'यहाँ ग्रन्थ का संकलित पाठ दिखाई देगा...' : 'Combined book text will appear here...'}
+                    className="w-full p-4 font-devanagari text-xs sm:text-sm text-stone-900 leading-relaxed focus:outline-none resize-y selection:bg-amber-100 bg-[#faf8f5]"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

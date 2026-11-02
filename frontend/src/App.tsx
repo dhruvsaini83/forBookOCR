@@ -66,7 +66,14 @@ export const App: React.FC = () => {
     }
     return 'scanner';
   });
-  const [selectedBookIdForBuilder, setSelectedBookIdForBuilder] = useState<string | null>(null);
+  const [selectedBookIdForBuilder, setSelectedBookIdForBuilder] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      const match = window.location.pathname.match(/\/books\/([^/]+)\/builder/) ||
+                    window.location.pathname.match(/\/builder\/([^/]+)/);
+      if (match) return match[1];
+    }
+    return null;
+  });
 
   // Responsive Workspace Mode ('split' | 'image' | 'text')
   const [workspaceMode, setWorkspaceMode] = useState<'split' | 'image' | 'text'>('split');
