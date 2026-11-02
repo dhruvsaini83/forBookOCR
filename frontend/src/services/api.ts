@@ -14,7 +14,12 @@ import type {
   CompressionMetadata,
   CompressionInfoResponse,
   OcrEngine,
-  ComparisonData
+  ComparisonData,
+  BookBuilderData,
+  BookBuilderResponse,
+  BuilderHistoryEntry,
+  BuilderStageComparisonItem,
+  BuilderDraftItem
 } from '../types';
 
 export const BACKEND_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
@@ -364,4 +369,123 @@ export const api = {
     });
     return handleResponse(res, 'Failed to check duplicates');
   },
+  async getBookBuilder(bookId: string): Promise<BookBuilderResponse> {
+    const res = await fetch(`${API_BASE}/books/${bookId}/builder`);
+    return handleResponse(res, 'Failed to fetch book builder collection');
+  },
+
+  async builderAddPages(bookId: string, pageIds: string[]): Promise<BookBuilderResponse> {
+    const res = await fetch(`${API_BASE}/books/${bookId}/builder/add`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ page_ids: pageIds }),
+    });
+    return handleResponse(res, 'Failed to add pages to book builder');
+  },
+
+  async builderRemovePage(bookId: string, pageId: string): Promise<BookBuilderResponse> {
+    const res = await fetch(`${API_BASE}/books/${bookId}/builder/remove`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ page_id: pageId }),
+    });
+    return handleResponse(res, 'Failed to remove page from book builder');
+  },
+
+  async builderReorderPages(bookId: string, orderedPageNumbers: number[]): Promise<BookBuilderResponse> {
+    const res = await fetch(`${API_BASE}/books/${bookId}/builder/reorder`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ordered_page_numbers: orderedPageNumbers }),
+    });
+    return handleResponse(res, 'Failed to reorder book builder pages');
+  },
+
+  async builderEditText(bookId: string, combinedText: string): Promise<{ success: boolean; book_id: string; message: string; builder: BookBuilderData }> {
+    const res = await fetch(`${API_BASE}/books/${bookId}/builder/edit`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ combined_text: combinedText }),
+    });
+    return handleResponse(res, 'Failed to edit builder combined text');
+  },
+  async builderCombinedEdit(bookId: string, combinedText: string, reason?: string): Promise<{
+    success: boolean;
+    book_id: string;
+    message: string;
+    builder: BookBuilderData;
+    history_entry: BuilderHistoryEntry;
+  }> {
+    const res = await fetch(`${API_BASE}/books/${bookId}/builder/combined-edit`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ combined_text: combinedText, reason: reason || 'CombinedEditor update' }),
+    });
+    return handleResponse(res, 'Failed to update combined text and history');
+  },
+
+  async getBuilderHistory(bookId: string, limit = 50): Promise<{
+    success: boolean;
+    book_id: string;
+    history: BuilderHistoryEntry[];
+  }> {
+    const res = await fetch(`${API_BASE}/books/${bookId}/builder/history?limit=${limit}`);
+    return handleResponse(res, 'Failed to fetch builder edit history');
+  },
+
+  async getBuilderStageComparison(bookId: string): Promise<{
+    success: boolean;
+    book_id: string;
+    comparison: BuilderStageComparisonItem[];
+  }> {
+    const res = await fetch(`${API_BASE}/books/${bookId}/builder/stage-comparison`);
+    return handleResponse(res, 'Failed to fetch stage comparison');
+  },
+
+  async saveBuilderDraft(bookId: string, name: string, text: string): Promise<{
+    success: boolean;
+    book_id: string;
+    draft: BuilderDraftItem;
+  }> {
+    const res = await fetch(`${API_BASE}/books/${bookId}/builder/drafts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, text }),
+    });
+    return handleResponse(res, 'Failed to save builder draft');
+  },
+
+  async listBuilderDrafts(bookId: string): Promise<{
+    success: boolean;
+    book_id: string;
+    drafts: BuilderDraftItem[];
+  }> {
+    const res = await fetch(`${API_BASE}/books/${bookId}/builder/drafts`);
+    return handleResponse(res, 'Failed to list builder drafts');
+  },
+
+  async deleteBuilderDraft(bookId: string, draftId: string): Promise<{
+    success: boolean;
+    book_id: string;
+    deleted: boolean;
+    message: string;
+  }> {
+    const res = await fetch(`${API_BASE}/books/${bookId}/builder/drafts/${draftId}`, {
+      method: 'DELETE',
+    });
+    return handleResponse(res, 'Failed to delete builder draft');
+  },
+
+  async loadBuilderDraft(bookId: string, draftId: string): Promise<{
+    success: boolean;
+    book_id: string;
+    draft: BuilderDraftItem;
+    message: string;
+  }> {
+    const res = await fetch(`${API_BASE}/books/${bookId}/builder/drafts/${draftId}/load`, {
+      method: 'POST',
+    });
+    return handleResponse(res, 'Failed to load builder draft');
+  },
 };
+

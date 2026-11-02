@@ -1,5 +1,6 @@
 import sqlite3
 import json
+import uuid
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 from core.config import DB_PATH
@@ -185,6 +186,36 @@ def init_db():
     );
     """)
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_builder_book_id ON book_builder_collections(book_id)")
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS builder_correction_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        book_id TEXT NOT NULL,
+        previous_text TEXT,
+        updated_text TEXT,
+        diff_summary TEXT,
+        words_changed INTEGER DEFAULT 0,
+        chars_changed INTEGER DEFAULT 0,
+        reason TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
+    );
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_builder_history_book_id ON builder_correction_history(book_id)")
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS builder_drafts (
+        id TEXT PRIMARY KEY,
+        book_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        combined_text TEXT NOT NULL,
+        word_count INTEGER DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
+    );
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_builder_drafts_book_id ON builder_drafts(book_id)")
+
 
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_pages_upload_order ON pages(upload_order)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_pages_phash ON pages(phash)")
@@ -1171,6 +1202,7 @@ def save_book_builder(
 
 
 def update_book_builder_text(book_id: str, combined_text: str) -> Dict[str, Any]:
+    get_or_create_book_builder(book_id)
     """Manually updates combined_text in the book builder without modifying original verified page text."""
     now = datetime.now().isoformat()
     conn = get_db_connection()
@@ -1186,3 +1218,197 @@ def update_book_builder_text(book_id: str, combined_text: str) -> Dict[str, Any]
     conn.commit()
     conn.close()
     return get_or_create_book_builder(book_id)
+
+
+def compute_text_diff(old_text: str, new_text: str) -> Dict[str, Any]:
+    """Computes word and character differences and a unified diff between old and new text."""
+    import difflib
+    old_words = (old_text or "").split()
+    new_words = (new_text or "").split()
+    words_changed = abs(len(new_words) - len(old_words))
+    chars_changed = abs(len(new_text or "") - len(old_text or ""))
+    
+    diff_lines = list(difflib.unified_diff(
+        (old_text or "").splitlines(keepends=True),
+        (new_text or "").splitlines(keepends=True),
+        fromfile="previous_draft",
+        tofile="updated_draft",
+        n=2
+    ))
+    diff_unified = "".join(diff_lines[:100]) # Cap at 100 lines for efficiency
+    
+    return {
+        "words_changed": words_changed,
+        "chars_changed": chars_changed,
+        "diff_unified": diff_unified,
+        "old_words_count": len(old_words),
+        "new_words_count": len(new_words),
+    }
+
+
+def save_builder_combined_edit(
+    book_id: str,
+    new_combined_text: str,
+    reason: str = "Combined text edit"
+) -> Dict[str, Any]:
+    """Updates combined_text and records a diff entry into builder_correction_history."""
+    current_builder = get_or_create_book_builder(book_id)
+    old_text = current_builder.get("combined_text") or ""
+    
+    diff_info = compute_text_diff(old_text, new_combined_text)
+    now = datetime.now().isoformat()
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("""
+        INSERT INTO builder_correction_history
+        (book_id, previous_text, updated_text, diff_summary, words_changed, chars_changed, reason, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        str(book_id),
+        old_text,
+        new_combined_text,
+        diff_info["diff_unified"],
+        diff_info["words_changed"],
+        diff_info["chars_changed"],
+        reason,
+        now
+    ))
+    history_id = cursor.lastrowid
+    
+    cursor.execute("""
+        UPDATE book_builder_collections
+        SET combined_text = ?,
+            updated_at = ?
+        WHERE book_id = ?
+    """, (new_combined_text, now, str(book_id)))
+    
+    conn.commit()
+    conn.close()
+    
+    updated_builder = get_or_create_book_builder(book_id)
+    return {
+        "builder": updated_builder,
+        "history_entry": {
+            "id": history_id,
+            "book_id": str(book_id),
+            "words_changed": diff_info["words_changed"],
+            "chars_changed": diff_info["chars_changed"],
+            "diff_summary": diff_info["diff_unified"],
+            "reason": reason,
+            "created_at": now
+        }
+    }
+
+
+def get_builder_history(book_id: str, limit: int = 50) -> List[Dict[str, Any]]:
+    """Retrieves edit history for a book builder collection."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT id, book_id, diff_summary, words_changed, chars_changed, reason, created_at
+        FROM builder_correction_history
+        WHERE book_id = ?
+        ORDER BY id DESC
+        LIMIT ?
+    """, (str(book_id), limit))
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_builder_stage_comparison(book_id: str) -> List[Dict[str, Any]]:
+    """Returns 3-way text comparison for each included page:
+    Stage 1: raw_ocr_text / original_ocr_text
+    Stage 2: verified_text / confirmed_text
+    """
+    builder = get_or_create_book_builder(book_id)
+    included_ids = builder.get("included_pages") or []
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    results = []
+    for pid in included_ids:
+        cursor.execute("SELECT * FROM pages WHERE id = ?", (str(pid),))
+        row = cursor.fetchone()
+        if row:
+            p = dict(row)
+            p_num = p.get("page_number", 1)
+            raw_ocr = p.get("original_ocr_text") or p.get("raw_ocr_text") or ""
+            verified = p.get("confirmed_text") or p.get("reviewed_text") or p.get("verified_text") or ""
+            results.append({
+                "page_id": p["id"],
+                "page_number": p_num,
+                "upload_order": p.get("upload_order", 1),
+                "original_image_path": p.get("original_image_path", ""),
+                "preprocessed_image_path": p.get("preprocessed_image_path", ""),
+                "raw_ocr_text": raw_ocr,
+                "verified_text": verified,
+                "status": p.get("status", "")
+            })
+    conn.close()
+    return results
+
+
+def save_builder_draft(book_id: str, name: str, text: str) -> Dict[str, Any]:
+    """Saves a named draft for the book builder."""
+    draft_id = str(uuid.uuid4())
+    now = datetime.now().isoformat()
+    word_count = len((text or "").split())
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO builder_drafts (id, book_id, name, combined_text, word_count, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (draft_id, str(book_id), name.strip() or "Untitled Draft", text, word_count, now, now))
+    conn.commit()
+    conn.close()
+    return {
+        "id": draft_id,
+        "book_id": str(book_id),
+        "name": name.strip() or "Untitled Draft",
+        "word_count": word_count,
+        "created_at": now
+    }
+
+
+def list_builder_drafts(book_id: str) -> List[Dict[str, Any]]:
+    """Lists all saved drafts for a book."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT id, book_id, name, word_count, created_at, updated_at
+        FROM builder_drafts
+        WHERE book_id = ?
+        ORDER BY created_at DESC
+    """, (str(book_id),))
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def delete_builder_draft(book_id: str, draft_id: str) -> bool:
+    """Deletes a saved draft."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM builder_drafts WHERE id = ? AND book_id = ?", (str(draft_id), str(book_id)))
+    deleted = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return deleted
+
+
+def load_builder_draft(book_id: str, draft_id: str) -> Optional[Dict[str, Any]]:
+    """Loads a saved draft and activates its text in book builder."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM builder_drafts WHERE id = ? AND book_id = ?", (str(draft_id), str(book_id)))
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        return None
+    d = dict(row)
+    update_book_builder_text(book_id, d["combined_text"])
+    return d

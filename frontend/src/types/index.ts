@@ -356,3 +356,54 @@ export interface MissingPagesReport {
   max_page_uploaded: number;
   unscanned_pages_count: number;
 }
+
+export interface BookBuilderData {
+  id: string;
+  book_id: string;
+  combined_text: string;
+  page_order: number[];
+  included_pages: string[];
+  separator: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BookBuilderResponse {
+  success: boolean;
+  book_id: string;
+  book_name?: string;
+  builder: BookBuilderData;
+  pages?: PageData[];
+  total_included_pages?: number;
+}
+
+export interface BuilderHistoryEntry {
+  id: number;
+  book_id: string;
+  diff_summary?: string;
+  words_changed: number;
+  chars_changed: number;
+  reason?: string;
+  created_at: string;
+}
+
+export interface BuilderStageComparisonItem {
+  page_id: string;
+  page_number: number;
+  upload_order: number;
+  original_image_path: string;
+  preprocessed_image_path: string;
+  raw_ocr_text: string;
+  verified_text: string;
+  status: string;
+}
+
+export interface BuilderDraftItem {
+  id: string;
+  book_id: string;
+  name: string;
+  combined_text?: string;
+  word_count: number;
+  created_at: string;
+  updated_at?: string;
+}

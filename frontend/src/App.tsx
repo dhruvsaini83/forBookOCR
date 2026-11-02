@@ -15,6 +15,8 @@ import { ExportModal } from './components/ExportModal';
 import { ImageAdjustmentModal } from './components/ImageAdjustmentModal';
 import { ComparisonModal } from './components/ComparisonModal';
 import { Books } from './pages/Books';
+import { BookBuilder } from './pages/BookBuilder';
+import { CombinedEditor } from './pages/CombinedEditor';
 import type { Language } from './i18n/translations';
 import { translations } from './i18n/translations';
 import type { DocumentData, PageData, WordToken } from './types';
@@ -39,12 +41,16 @@ export const App: React.FC = () => {
   } | null>(null);
 
   // Top-level Navigation View ('scanner' | 'books')
-  const [currentView, setCurrentView] = useState<'scanner' | 'books'>(() => {
+  const [currentView, setCurrentView] = useState<'scanner' | 'books' | 'builder' | 'combined-editor'>(() => {
+    if (typeof window !== 'undefined' && window.location.pathname.includes('/builder')) {
+      return 'builder';
+    }
     if (typeof window !== 'undefined' && window.location.pathname.startsWith('/books')) {
       return 'books';
     }
     return 'scanner';
   });
+  const [selectedBookIdForBuilder, setSelectedBookIdForBuilder] = useState<string | null>(null);
 
   // Responsive Workspace Mode ('split' | 'image' | 'text')
   const [workspaceMode, setWorkspaceMode] = useState<'split' | 'image' | 'text'>('split');
@@ -260,14 +266,42 @@ export const App: React.FC = () => {
         activeDocTitle={currentDoc?.title}
       />
 
-      {/* View Switcher: Books Management vs OCR Scanner Workspace */}
-      {currentView === 'books' ? (
+      {/* View Switcher: Combined Editor vs Book Builder vs Books Management vs OCR Scanner Workspace */}
+      {currentView === 'combined-editor' && selectedBookIdForBuilder ? (
+        <CombinedEditor
+          bookId={selectedBookIdForBuilder}
+          lang={lang}
+          onNavigateBack={() => setCurrentView('builder')}
+          onNavigateHome={() => setCurrentView('scanner')}
+        />
+      ) : currentView === 'builder' ? (
+        <BookBuilder
+          initialBookId={selectedBookIdForBuilder || undefined}
+          lang={lang}
+          onNavigateBack={() => setCurrentView('books')}
+          onNavigateHome={() => setCurrentView('scanner')}
+          onOpenCombinedEditor={(bId) => {
+            setSelectedBookIdForBuilder(bId);
+            setCurrentView('combined-editor');
+            if (typeof window !== 'undefined') {
+              window.history.pushState({}, '', `/books/${bId}/combined-editor`);
+            }
+          }}
+        />
+      ) : currentView === 'books' ? (
         <Books
           lang={lang}
           onNavigateHome={() => {
             setCurrentView('scanner');
             if (typeof window !== 'undefined') {
               window.history.pushState({}, '', '/');
+            }
+          }}
+          onOpenBookBuilder={(bookId) => {
+            setSelectedBookIdForBuilder(bookId);
+            setCurrentView('builder');
+            if (typeof window !== 'undefined') {
+              window.history.pushState({}, '', `/books/${bookId}/builder`);
             }
           }}
           onSelectBook={async (bookId) => {

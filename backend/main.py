@@ -148,6 +148,14 @@ class BuilderReorderRequest(BaseModel):
 class BuilderEditTextRequest(BaseModel):
     combined_text: str
 
+class BuilderCombinedEditRequest(BaseModel):
+    combined_text: str
+    reason: Optional[str] = "Manual document editing in CombinedEditor"
+
+class BuilderSaveDraftRequest(BaseModel):
+    name: str
+    text: str
+
 class ReorderPagesRequest(BaseModel):
     ordered_page_ids: List[str]
 
@@ -2178,6 +2186,109 @@ def edit_book_builder_text_endpoint(book_id: str, payload: BuilderEditTextReques
         "builder": updated_builder,
         "message": "BookBuilder combined text updated successfully. Original page verified texts remain preserved."
     }
+
+@app.put("/api/books/{book_id}/builder/combined-edit")
+def combined_edit_endpoint(book_id: str, payload: BuilderCombinedEditRequest):
+    """Updates combined_text and records audit diff into builder_correction_history."""
+    book = db.get_book_by_id(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail=f"Book with ID '{book_id}' not found.")
+        
+    result = db.save_builder_combined_edit(
+        book_id=book_id,
+        new_combined_text=payload.combined_text,
+        reason=payload.reason or "Combined document editing"
+    )
+    return {
+        "success": True,
+        "book_id": book_id,
+        "message": "Combined text updated and correction history recorded.",
+        "builder": result["builder"],
+        "history_entry": result["history_entry"]
+    }
+
+
+@app.get("/api/books/{book_id}/builder/history")
+def get_builder_history_endpoint(book_id: str, limit: int = 50):
+    book = db.get_book_by_id(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail=f"Book with ID '{book_id}' not found.")
+        
+    history = db.get_builder_history(book_id, limit=limit)
+    return {
+        "success": True,
+        "book_id": book_id,
+        "history": history
+    }
+
+
+@app.get("/api/books/{book_id}/builder/stage-comparison")
+def get_builder_stage_comparison_endpoint(book_id: str):
+    book = db.get_book_by_id(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail=f"Book with ID '{book_id}' not found.")
+        
+    comparison = db.get_builder_stage_comparison(book_id)
+    return {
+        "success": True,
+        "book_id": book_id,
+        "comparison": comparison
+    }
+
+
+@app.post("/api/books/{book_id}/builder/drafts")
+def save_builder_draft_endpoint(book_id: str, payload: BuilderSaveDraftRequest):
+    book = db.get_book_by_id(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail=f"Book with ID '{book_id}' not found.")
+        
+    draft = db.save_builder_draft(book_id, payload.name, payload.text)
+    return {
+        "success": True,
+        "book_id": book_id,
+        "draft": draft
+    }
+
+
+@app.get("/api/books/{book_id}/builder/drafts")
+def list_builder_drafts_endpoint(book_id: str):
+    book = db.get_book_by_id(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail=f"Book with ID '{book_id}' not found.")
+        
+    drafts = db.list_builder_drafts(book_id)
+    return {
+        "success": True,
+        "book_id": book_id,
+        "drafts": drafts
+    }
+
+
+@app.delete("/api/books/{book_id}/builder/drafts/{draft_id}")
+def delete_builder_draft_endpoint(book_id: str, draft_id: str):
+    deleted = db.delete_builder_draft(book_id, draft_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Draft with ID '{draft_id}' not found.")
+    return {
+        "success": True,
+        "book_id": book_id,
+        "deleted": True,
+        "message": "Draft deleted successfully."
+    }
+
+
+@app.post("/api/books/{book_id}/builder/drafts/{draft_id}/load")
+def load_builder_draft_endpoint(book_id: str, draft_id: str):
+    draft = db.load_builder_draft(book_id, draft_id)
+    if not draft:
+        raise HTTPException(status_code=404, detail=f"Draft with ID '{draft_id}' not found.")
+    return {
+        "success": True,
+        "book_id": book_id,
+        "draft": draft,
+        "message": f"Draft '{draft['name']}' activated into combined text."
+    }
+
 
 # Mount built frontend assets if dist exists
 FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"

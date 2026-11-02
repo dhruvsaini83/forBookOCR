@@ -13,12 +13,14 @@ interface BooksProps {
   lang?: Language;
   onNavigateHome?: () => void;
   onSelectBook?: (bookId: string) => void;
+  onOpenBookBuilder?: (bookId: string) => void;
 }
 
 export const Books: React.FC<BooksProps> = ({
   lang = 'hi',
   onNavigateHome,
-  onSelectBook
+  onSelectBook,
+  onOpenBookBuilder
 }) => {
   const isHi = lang === 'hi';
 
@@ -581,6 +583,17 @@ export const Books: React.FC<BooksProps> = ({
                         <span>{isHi ? 'पृष्ठ क्रम' : 'Pages'}</span>
                       </button>
 
+                      {onOpenBookBuilder && (
+                        <button
+                          type="button"
+                          onClick={() => onOpenBookBuilder(book.id)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold text-xs font-devanagari transition-colors shadow-2xs"
+                          title={isHi ? 'पुस्तक संकलक खोलें' : 'Open Book Builder'}
+                        >
+                          <Layers className="w-3.5 h-3.5 text-vedic-700" />
+                          <span>{isHi ? 'संकलक' : 'Builder'}</span>
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => handleNavigateToBook(book.id)}

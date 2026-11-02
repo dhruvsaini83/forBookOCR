@@ -15,7 +15,7 @@ interface HeaderProps {
   onOpenBenchmark: () => void;
   onOpenSamples: () => void;
   onOpenBooks?: () => void;
-  activeView?: 'scanner' | 'books';
+  activeView?: 'scanner' | 'books' | 'builder' | 'combined-editor';
   activeDocTitle?: string;
 }
 
