@@ -464,3 +464,30 @@ export interface BookExportResponse {
   file_size: number;
   pages_count: number;
 }
+
+
+export interface SuggestionItem {
+  original: string;
+  suggested: string;
+  bbox?: [number, number, number, number] | { x: number; y: number; w: number; h: number };
+  index?: number;
+  reason: string;
+  confidence: number;
+  rule?: 'direct_correction' | 'confusion_pair' | 'levenshtein';
+  details?: {
+    count?: number;
+    frequency?: number;
+    learned_frequency?: number;
+    wrong?: string;
+    correct?: string;
+    distance?: number;
+  };
+}
+
+export interface PageSuggestionsResponse {
+  success: boolean;
+  page_id: string;
+  book_id?: string;
+  suggestions: SuggestionItem[];
+  total: number;
+}

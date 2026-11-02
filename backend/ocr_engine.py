@@ -40,3 +40,4 @@ def get_tesseract_config(book_id: Optional[str] = None) -> str:
         return f'--oem 1 --psm 6 -l hin+Devanagari+san --user-words {alt_path}'
 
     return '--oem 1 --psm 6 -l hin+Devanagari+san'
+

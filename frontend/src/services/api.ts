@@ -26,7 +26,8 @@ import type {
   ExportFormat,
   ExportScope,
   BookExportOptions,
-  BookExportResponse
+  BookExportResponse,
+  PageSuggestionsResponse
 } from '../types';
 
 export const BACKEND_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
@@ -588,5 +589,20 @@ export const api = {
     params.append('limit', String(limit));
     const res = await fetch(`${API_BASE}/confusion-pairs?${params.toString()}`);
     return handleResponse(res, 'Failed to fetch confusion pairs');
+  },
+  async getPageSuggestions(
+    pageId: string,
+    rawWords?: any[],
+    bookId?: string | null
+  ): Promise<PageSuggestionsResponse> {
+    const payload: any = {};
+    if (rawWords && rawWords.length > 0) payload.raw_words = rawWords;
+    if (bookId) payload.book_id = bookId;
+    const res = await fetch(`${API_BASE}/pages/${pageId}/suggestions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return handleResponse(res, 'Failed to fetch suggestions');
   },
 };

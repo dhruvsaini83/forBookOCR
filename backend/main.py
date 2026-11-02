@@ -9,7 +9,7 @@ import re
 import hashlib
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Union
-from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Query, BackgroundTasks, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Query, BackgroundTasks, WebSocket, WebSocketDisconnect, Request, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse, Response
@@ -66,6 +66,7 @@ from file_manager import (
 )
 import instant_learner
 import ocr_engine
+import suggestion_engine
 
 class SelectEngineRequest(BaseModel):
     engine: str  # "tesseract" | "easyocr" | "paddleocr"
@@ -86,6 +87,11 @@ class AdjustmentRequest(BaseModel):
     fine_rotation: float = 0.0
     apply_to_all_pages: bool = False
     run_ocr: bool = True
+
+class PageSuggestionsRequest(BaseModel):
+    raw_words: Optional[List[Any]] = None
+    words: Optional[List[Any]] = None
+    book_id: Optional[str] = None
 
 class CompressionRequest(BaseModel):
     mode: str = "smart"  # 'smart', 'lossless', 'high_quality', 'original'
@@ -1558,6 +1564,43 @@ def get_book_tesseract_config(book_id: str):
         "book_id": book_id,
         "tesseract_config": cfg
     }
+
+@app.post("/api/pages/{id}/suggestions")
+def get_page_suggestions_endpoint(
+    id: str,
+    req: Optional[PageSuggestionsRequest] = Body(None)
+):
+    """
+    Generates intelligent word correction suggestions for a page:
+    - Rule 1: Direct historical corrections ("आपने पहले 12 बार 'रम' को 'राम' ठीक किया था। बदलें?")
+    - Rule 2: Confusion pair character substitutions leading to verified learned words ("भजम" -> "भजन")
+    - Rule 3: Levenshtein distance 1 match against learned vocabulary
+    """
+    page = db.get_page_by_id(id)
+    book_id = req.book_id if req else None
+    raw_words = (req.raw_words or req.words or []) if req else []
+
+    if not book_id and page:
+        book_id = page.get("book_id")
+
+    if not raw_words and page:
+        if page.get("word_tokens") and isinstance(page["word_tokens"], list):
+            raw_words = page["word_tokens"]
+        elif page.get("verified_text") or page.get("cleaned_text") or page.get("raw_ocr_text"):
+            src_text = page.get("verified_text") or page.get("cleaned_text") or page.get("raw_ocr_text") or ""
+            words = src_text.strip().split()
+            raw_words = [{"text": w, "bbox": [0, 0, 0, 0], "index": idx} for idx, w in enumerate(words)]
+
+    suggestions = suggestion_engine.generate_suggestions(raw_words=raw_words, book_id=book_id)
+
+    return {
+        "success": True,
+        "page_id": id,
+        "book_id": book_id,
+        "suggestions": suggestions,
+        "total": len(suggestions)
+    }
+
 
 
 

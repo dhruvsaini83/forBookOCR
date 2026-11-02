@@ -132,3 +132,4 @@ def test_get_tesseract_config():
     finally:
         if os.path.exists(user_words_path):
             os.remove(user_words_path)
+
