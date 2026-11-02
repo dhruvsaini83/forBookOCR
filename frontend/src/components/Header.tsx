@@ -16,7 +16,8 @@ interface HeaderProps {
   onOpenSamples: () => void;
   onOpenBooks?: () => void;
   onOpenVerify?: () => void;
-  activeView?: 'scanner' | 'books' | 'builder' | 'combined-editor' | 'library' | 'export' | 'verify';
+  onOpenLearning?: () => void;
+  activeView?: 'scanner' | 'books' | 'builder' | 'combined-editor' | 'library' | 'export' | 'verify' | 'learning';
   activeDocTitle?: string;
 }
 
@@ -30,6 +31,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenSamples,
   onOpenBooks,
   onOpenVerify,
+  onOpenLearning,
   activeView = 'scanner',
   activeDocTitle,
 }) => {
@@ -140,6 +142,23 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
             )}
 
+            {onOpenLearning && (
+              <button
+                type="button"
+                onClick={onOpenLearning}
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl border text-xs sm:text-sm transition-colors font-devanagari shrink-0 cursor-pointer ${
+                  activeView === 'learning'
+                    ? 'bg-purple-50 border-purple-300 text-purple-900 font-bold shadow-2xs'
+                    : 'border-stone-200 hover:bg-stone-50 text-stone-700 font-medium'
+                }`}
+                title={lang === 'hi' ? 'एआई अधिगम डैशबोर्ड' : 'AI Learning Dashboard'}
+                aria-label={lang === 'hi' ? 'एआई अधिगम डैशबोर्ड' : 'AI Learning Dashboard'}
+              >
+                <Sparkles className="w-4 h-4 text-purple-600 shrink-0" />
+                <span className="whitespace-nowrap">{lang === 'hi' ? 'डैशबोर्ड' : 'Dashboard'}</span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={onOpenHistory}
@@ -148,13 +167,14 @@ export const Header: React.FC<HeaderProps> = ({
               aria-label={t.navHistory}
             >
               <FileText className="w-4 h-4 text-vedic-700 shrink-0" />
-              <span className="whitespace-nowrap">{t.navHistory}</span>
+              <span className="whitespace-nowrap hidden xl:inline">{t.navHistory}</span>
+              <span className="whitespace-nowrap xl:hidden">{lang === 'hi' ? 'इतिहास' : 'History'}</span>
             </button>
 
             <button
               type="button"
               onClick={onOpenSamples}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl border border-stone-200 hover:bg-stone-50 text-stone-700 font-medium text-xs sm:text-sm transition-colors font-devanagari shrink-0 cursor-pointer"
+              className="hidden lg:inline-flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl border border-stone-200 hover:bg-stone-50 text-stone-700 font-medium text-xs sm:text-sm transition-colors font-devanagari shrink-0 cursor-pointer"
               title={t.navSamples}
               aria-label={t.navSamples}
             >
@@ -165,7 +185,7 @@ export const Header: React.FC<HeaderProps> = ({
             <button
               type="button"
               onClick={onOpenBenchmark}
-              className="hidden lg:inline-flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl border border-stone-200 hover:bg-stone-50 text-stone-700 font-medium text-xs sm:text-sm transition-colors font-devanagari shrink-0 cursor-pointer"
+              className="hidden xl:inline-flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl border border-stone-200 hover:bg-stone-50 text-stone-700 font-medium text-xs sm:text-sm transition-colors font-devanagari shrink-0 cursor-pointer"
               title={t.navBenchmark}
               aria-label={t.navBenchmark}
             >
@@ -331,6 +351,24 @@ export const Header: React.FC<HeaderProps> = ({
               >
                 <BrainCircuit className="w-4 h-4 text-amber-600" />
                 <span>{lang === 'hi' ? 'सत्यापन व शिक्षण' : 'Verify & Learn'}</span>
+              </button>
+            )}
+
+            {onOpenLearning && (
+              <button
+                type="button"
+                onClick={() => {
+                  onOpenLearning();
+                  setMobileMenuOpen(false);
+                }}
+                className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl border text-xs font-devanagari text-left transition-colors ${
+                  activeView === 'learning'
+                    ? 'bg-purple-50 border-purple-300 text-purple-900 font-bold'
+                    : 'border-stone-200 hover:bg-stone-50 text-stone-800 font-medium'
+                }`}
+              >
+                <Sparkles className="w-4 h-4 text-purple-600" />
+                <span>{lang === 'hi' ? 'एआई अधिगम डैशबोर्ड (Stats & Model)' : 'AI Learning Dashboard'}</span>
               </button>
             )}
 

@@ -15,6 +15,7 @@ interface VerifyProps {
   lang: Language;
   onBackToBooks?: () => void;
   onNavigateToBuilder?: (bookId: string) => void;
+  onOpenLearning?: (bookId?: string) => void;
 }
 
 interface ToastMessage {
@@ -27,7 +28,8 @@ export const Verify: React.FC<VerifyProps> = ({
   initialBookId,
   initialPageNumber = 1,
   onBackToBooks,
-  onNavigateToBuilder
+  onNavigateToBuilder,
+  onOpenLearning
 }) => {
   // Books & Navigation State
   const [books, setBooks] = useState<BookData[]>([]);
@@ -495,6 +497,18 @@ export const Verify: React.FC<VerifyProps> = ({
             <Sparkles className="w-3.5 h-3.5 text-amber-700" />
             <span>सीखे गए शब्द ({learnedCount})</span>
           </button>
+
+          {onOpenLearning && (
+            <button
+              type="button"
+              onClick={() => onOpenLearning(selectedBookId || undefined)}
+              className="px-3 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-900 border border-purple-300 text-xs font-bold flex items-center gap-1.5 transition-colors shadow-2xs cursor-pointer"
+              title="एआई अधिगम डैशबोर्ड व मॉडल सांख्यिकी"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-purple-700" />
+              <span>एआई डैशबोर्ड</span>
+            </button>
+          )}
 
           {onNavigateToBuilder && selectedBookId && (
             <button

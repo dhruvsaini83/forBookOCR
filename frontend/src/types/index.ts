@@ -491,3 +491,58 @@ export interface PageSuggestionsResponse {
   suggestions: SuggestionItem[];
   total: number;
 }
+
+
+export interface LearnedWordItem {
+  word: string;
+  frequency: number;
+}
+
+export interface ConfusionPairItem {
+  wrong_char: string;
+  correct_char: string;
+  count: number;
+}
+
+export interface RecentCorrectionRow {
+  id: string;
+  book_id: string;
+  page_id?: string;
+  crop_image_path?: string;
+  ocr_text: string;
+  corrected_text: string;
+  engine?: string;
+  created_at: string;
+}
+
+export interface LearningMilestoneNotification {
+  id: string;
+  type: 'export_ready' | 'retrain_ready' | string;
+  threshold: number;
+  message: string;
+  action: 'export' | 'finetune';
+  button_text: string;
+}
+
+export interface LearningStatsResponse {
+  success: boolean;
+  book_id: string;
+  total_corrections: number;
+  learned_words: {
+    total: number;
+    top: LearnedWordItem[];
+  };
+  confusions: ConfusionPairItem[];
+  accuracy_before: number;
+  accuracy_instant_learning: number;
+  accuracy_after: number;
+  accuracy_stages: Array<{
+    stage: string;
+    accuracy: number;
+    badge: string;
+  }>;
+  has_fine_tuned_model: boolean;
+  active_model: 'default' | 'fine_tuned';
+  recent_corrections: RecentCorrectionRow[];
+  notifications: LearningMilestoneNotification[];
+}

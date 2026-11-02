@@ -27,7 +27,8 @@ import type {
   ExportScope,
   BookExportOptions,
   BookExportResponse,
-  PageSuggestionsResponse
+  PageSuggestionsResponse,
+  LearningStatsResponse
 } from '../types';
 
 export const BACKEND_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
@@ -604,5 +605,32 @@ export const api = {
       body: JSON.stringify(payload),
     });
     return handleResponse(res, 'Failed to fetch suggestions');
+  },
+  async getLearningStats(bookId: string): Promise<LearningStatsResponse> {
+    const res = await fetch(`${API_BASE}/books/${bookId}/learning/stats`);
+    return handleResponse(res, 'Failed to fetch learning stats');
+  },
+
+  async switchActiveModel(bookId: string, modelType: 'default' | 'fine_tuned'): Promise<{ success: boolean; active_model: string; message: string }> {
+    const res = await fetch(`${API_BASE}/books/${bookId}/learning/active-model`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model_type: modelType }),
+    });
+    return handleResponse(res, 'Failed to switch active model');
+  },
+
+  async startFineTuning(bookId: string, maxIterations = 500): Promise<{ success: boolean; book_id: string; status: string; result: any }> {
+    const res = await fetch(`${API_BASE}/books/${bookId}/training/finetune?max_iterations=${maxIterations}`, {
+      method: 'POST',
+    });
+    return handleResponse(res, 'Failed to start fine-tuning');
+  },
+
+  async exportTrainingData(bookId: string, force = false): Promise<{ success: boolean; total_exported: number; message: string; training_data_dir?: string }> {
+    const res = await fetch(`${API_BASE}/books/${bookId}/training/export?force=${force}`, {
+      method: 'POST',
+    });
+    return handleResponse(res, 'Failed to export training data');
   },
 };

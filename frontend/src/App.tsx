@@ -20,6 +20,7 @@ import { CombinedEditor } from './pages/CombinedEditor';
 import { Library } from './pages/Library';
 import { BookExport } from './pages/BookExport';
 import { Verify } from './pages/Verify';
+import { LearningDashboard } from './pages/LearningDashboard';
 import type { Language } from './i18n/translations';
 import { translations } from './i18n/translations';
 import type { DocumentData, PageData, WordToken } from './types';
@@ -44,7 +45,10 @@ export const App: React.FC = () => {
   } | null>(null);
 
   // Top-level Navigation View ('scanner' | 'books' | 'builder' | 'combined-editor' | 'library' | 'export' | 'verify')
-  const [currentView, setCurrentView] = useState<'scanner' | 'books' | 'builder' | 'combined-editor' | 'library' | 'export' | 'verify'>(() => {
+  const [currentView, setCurrentView] = useState<'scanner' | 'books' | 'builder' | 'combined-editor' | 'library' | 'export' | 'verify' | 'learning'>(() => {
+    if (typeof window !== 'undefined' && (window.location.pathname.includes('/learning') || window.location.pathname.includes('/dashboard'))) {
+      return 'learning';
+    }
     if (typeof window !== 'undefined' && window.location.pathname.includes('/verify')) {
       return 'verify';
     }
@@ -303,11 +307,43 @@ export const App: React.FC = () => {
           }
         }}
         activeView={currentView}
+        onOpenLearning={() => {
+          const nextView = currentView === 'learning' ? 'scanner' : 'learning';
+          setCurrentView(nextView);
+          if (typeof window !== 'undefined') {
+            window.history.pushState({}, '', nextView === 'learning' ? '/learning' : '/');
+          }
+        }}
         activeDocTitle={currentDoc?.title}
       />
 
       {/* View Switcher: Export vs Library vs Combined Editor vs Book Builder vs Books Management vs OCR Scanner Workspace */}
-      {currentView === 'verify' ? (
+      {currentView === 'learning' ? (
+        <LearningDashboard
+          initialBookId={selectedBookIdForBuilder || undefined}
+          lang={lang}
+          onBackToBooks={() => {
+            setCurrentView('books');
+            if (typeof window !== 'undefined') {
+              window.history.pushState({}, '', '/books');
+            }
+          }}
+          onNavigateToVerify={(bId: string) => {
+            if (bId) setSelectedBookIdForBuilder(bId);
+            setCurrentView('verify');
+            if (typeof window !== 'undefined') {
+              window.history.pushState({}, '', `/verify?book_id=${bId}`);
+            }
+          }}
+          onNavigateToBuilder={(bId: string) => {
+            if (bId) setSelectedBookIdForBuilder(bId);
+            setCurrentView('builder');
+            if (typeof window !== 'undefined') {
+              window.history.pushState({}, '', `/books/${bId}/builder`);
+            }
+          }}
+        />
+      ) : currentView === 'verify' ? (
         <Verify
           initialBookId={selectedBookIdForBuilder}
           initialDocId={currentDoc?.id}
@@ -324,6 +360,13 @@ export const App: React.FC = () => {
             setCurrentView('builder');
             if (typeof window !== 'undefined') {
               window.history.pushState({}, '', `/builder/${bookId}`);
+            }
+          }}
+          onOpenLearning={(bookId) => {
+            if (bookId) setSelectedBookIdForBuilder(bookId);
+            setCurrentView('learning');
+            if (typeof window !== 'undefined') {
+              window.history.pushState({}, '', `/learning${bookId ? `?book_id=${bookId}` : ''}`);
             }
           }}
         />
@@ -404,6 +447,20 @@ export const App: React.FC = () => {
             setCurrentView('export');
             if (typeof window !== 'undefined') {
               window.history.pushState({}, '', `/books/${bookId}/export`);
+            }
+          }}
+          onOpenVerify={(bookId) => {
+            setSelectedBookIdForBuilder(bookId);
+            setCurrentView('verify');
+            if (typeof window !== 'undefined') {
+              window.history.pushState({}, '', `/verify?book_id=${bookId}`);
+            }
+          }}
+          onOpenLearning={(bookId) => {
+            setSelectedBookIdForBuilder(bookId);
+            setCurrentView('learning');
+            if (typeof window !== 'undefined') {
+              window.history.pushState({}, '', `/learning?book_id=${bookId}`);
             }
           }}
           onOpenBookBuilder={(bookId) => {

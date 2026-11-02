@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   BookOpen, Plus, Search, Edit3, Trash2, CheckCircle2,
   Clock, AlertTriangle, X, Image as ImageIcon, UploadCloud,
-  ArrowLeft, RefreshCw, ShieldCheck, Sparkles, Layers, ArrowUpDown, BookMarked, Download
+  ArrowLeft, RefreshCw, ShieldCheck, Sparkles, Layers, ArrowUpDown, BookMarked, Download, BrainCircuit
 } from 'lucide-react';
 import { api, getStorageUrl } from '../services/api';
 import type { BookData, BookStatus, CreateBookPayload, UpdateBookPayload, DashboardMetrics } from '../types';
@@ -16,6 +16,8 @@ interface BooksProps {
   onOpenBookBuilder?: (bookId: string) => void;
   onOpenLibrary?: (bookId: string) => void;
   onOpenExport?: (bookId: string) => void;
+  onOpenLearning?: (bookId: string) => void;
+  onOpenVerify?: (bookId: string) => void;
 }
 
 export const Books: React.FC<BooksProps> = ({
@@ -24,7 +26,9 @@ export const Books: React.FC<BooksProps> = ({
   onSelectBook,
   onOpenBookBuilder,
   onOpenLibrary,
-  onOpenExport
+  onOpenExport,
+  onOpenLearning,
+  onOpenVerify
 }) => {
   const isHi = lang === 'hi';
 
@@ -607,6 +611,28 @@ export const Books: React.FC<BooksProps> = ({
                         >
                           <Layers className="w-3.5 h-3.5 text-vedic-700" />
                           <span>{isHi ? 'संकलक' : 'Builder'}</span>
+                        </button>
+                      )}
+                      {onOpenVerify && (
+                        <button
+                          type="button"
+                          onClick={() => onOpenVerify(book.id)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 font-bold text-xs font-devanagari transition-colors shadow-2xs"
+                          title={isHi ? 'मानवीय सत्यापन व वर्तनी शुद्धि' : 'Verify & Learn'}
+                        >
+                          <BrainCircuit className="w-3.5 h-3.5 text-emerald-700" />
+                          <span>{isHi ? 'सत्यापन' : 'Verify'}</span>
+                        </button>
+                      )}
+                      {onOpenLearning && (
+                        <button
+                          type="button"
+                          onClick={() => onOpenLearning(book.id)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-900 border border-purple-300 font-bold text-xs font-devanagari transition-colors shadow-2xs"
+                          title={isHi ? 'एआई अधिगम सांख्यिकी एवं मॉडल डैशबोर्ड' : 'AI Learning Dashboard'}
+                        >
+                          <Sparkles className="w-3.5 h-3.5 text-purple-700" />
+                          <span>{isHi ? 'डैशबोर्ड' : 'AI'}</span>
                         </button>
                       )}
                       {onOpenExport && (

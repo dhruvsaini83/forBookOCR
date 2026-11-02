@@ -133,3 +133,4 @@ def test_api_finetune_and_result():
     for d in [Path("output") / book_id, Path("fine_tuned_models") / book_id, Path("training_data") / book_id]:
         if d.exists():
             shutil.rmtree(d, ignore_errors=True)
+
