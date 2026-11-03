@@ -150,3 +150,4 @@ def test_health_api():
     data = res.json()
     assert data.get("status") == "healthy", f"Expected status 'healthy', got {data.get('status')}"
     assert data.get("tesseract") is True, f"Expected tesseract True, got {data.get('tesseract')}"
+
