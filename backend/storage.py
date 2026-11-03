@@ -19,8 +19,8 @@ Provides:
     - Original image is NEVER overwritten; non-colliding unique paths are created.
     - Magic bytes validation for JPEG, PNG, WEBP, and PDF.
     - Strict file size limit <= 50MB.
-    - Render / Cloud deployment staging: temporarily written to /tmp (or OS temp dir),
-      uploaded to R2, and immediately deleted from local disk in a finally block.
+    - Render / Cloud deployment staging: temporarily written to system temp dir,
+    uploaded to R2, and immediately deleted from local disk in a finally block.
     - Graceful local fallback when R2 credentials are not configured.
 """
 
@@ -144,19 +144,19 @@ def get_file_url(path: str) -> str:
 
 
 def _stage_and_upload(path: str, file_bytes: bytes, content_type: str) -> str:
-    """Stages the file in local /tmp (or system tempdir), uploads to R2 via boto3,
+    """Stages the file in system tempdir, uploads to R2 via boto3,
     and immediately deletes the local temporary file in a finally block.
     """
     clean_path = path.lstrip("/")
     client = get_s3_client()
 
-    # Determine staging directory: prefer /tmp (standard on Render/Linux)
-    temp_dir = "/tmp" if os.path.exists("/tmp") and os.path.isdir("/tmp") else tempfile.gettempdir()
+    # Determine staging directory in a cross-platform manner
+    temp_dir = tempfile.gettempdir()
     temp_file = tempfile.NamedTemporaryFile(dir=temp_dir, delete=False)
     temp_path = temp_file.name
 
     try:
-        # Write to local /tmp
+        # Write to system temp directory
         temp_file.write(file_bytes)
         temp_file.flush()
         temp_file.close()
@@ -178,7 +178,7 @@ def _stage_and_upload(path: str, file_bytes: bytes, content_type: str) -> str:
                 f_out.write(file_bytes)
             logger.info(f"R2 not configured. Saved to local storage mirror: {fallback_dest}")
     finally:
-        # Immediate cleanup: delete temporary file from /tmp
+        # Immediate cleanup: delete temporary file from system temp directory
         if os.path.exists(temp_path):
             try:
                 os.remove(temp_path)

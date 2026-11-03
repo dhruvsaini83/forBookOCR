@@ -403,8 +403,13 @@ def favicon():
 @app.api_route("/health", methods=["GET", "HEAD"])
 @app.api_route("/api/health", methods=["GET", "HEAD"])
 def health_check():
+    import shutil
+    tesseract_available = bool(
+        (TESSERACT_CMD and Path(TESSERACT_CMD).exists()) or shutil.which(TESSERACT_CMD or "tesseract")
+    )
     return {
         "status": "healthy",
+        "tesseract": tesseract_available,
         "service": "वाणीसंशोधक (VaniScript Heritage OCR)",
         "version": "2.1.0",
         "tesseract_cmd": Path(TESSERACT_CMD).name if TESSERACT_CMD else "tesseract",

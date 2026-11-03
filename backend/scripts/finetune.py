@@ -15,7 +15,7 @@ Steps:
      --langdata_dir ./langdata \
      --tessdata_dir ./tessdata_best \
      --training_text ./training_data/{book_id}/all_gt.txt \
-     --workspace_dir /tmp/training \
+     --workspace_dir <temp_dir>/training \
      --output_dir ./output/{book_id} \
      --fontlist "Noto Sans Devanagari" \
      --continue_from ./tessdata_best/hin.traineddata \
@@ -34,6 +34,7 @@ import urllib.request
 import logging
 import argparse
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import Dict, Any, Optional
 
@@ -136,7 +137,7 @@ def finetune_book_model(
             "--langdata_dir", "./langdata",
             "--tessdata_dir", "./tessdata_best",
             "--training_text", str(train_text_path),
-            "--workspace_dir", "/tmp/training",
+            "--workspace_dir", str(Path(tempfile.gettempdir()) / "training"),
             "--output_dir", str(out_dir),
             "--fontlist", fontlist,
             "--continue_from", str(continue_from or base_model_path),

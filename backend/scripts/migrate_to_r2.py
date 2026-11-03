@@ -7,7 +7,7 @@ Workflow:
 4. For local files:
    - Reads file bytes from local disk.
    - Uploads to R2 using backend.storage.upload_original (with magic bytes validation,
-     staging in /tmp, and immediate cleanup).
+     staging in temp dir, and immediate cleanup).
    - Updates `original_image_path` in SQLite with the resulting R2 URL.
 5. Logs comprehensive progress and final migration summary statistics:
    - Total pages scanned
